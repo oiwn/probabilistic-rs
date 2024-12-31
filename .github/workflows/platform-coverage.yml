@@ -9,8 +9,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  REDIS_URI: redis://localhost:6379/15
   MONGODB_URI: mongodb://localhost:27017/testdb
-  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/testdb
 
 jobs:
   cross-platform:
