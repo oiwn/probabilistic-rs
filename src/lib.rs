@@ -30,7 +30,10 @@ use std::io::Cursor;
 use std::time::{Duration, SystemTime};
 
 pub mod backends;
-// pub mod redb_storage;
+#[cfg(feature = "redb")]
+pub mod redb_storage;
+#[cfg(feature = "redis")]
+pub mod redb_storage;
 
 use crate::backends::BloomFilterStorage;
 
