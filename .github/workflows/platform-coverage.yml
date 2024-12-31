@@ -30,8 +30,6 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run unit tests only
-        env:
-          SQLX_OFFLINE: true
         run: cargo test --lib --workspace --no-default-features
 
   coverage:
@@ -56,23 +54,9 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: testdb
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     env:
       REDIS_URI: redis://localhost:6379
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/testdb
       MONGODB_URI: mongodb://localhost:27017/testdb
       
     steps:
@@ -89,12 +73,6 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features postgres
-
-      - name: Run database migrations  
-        run: cargo sqlx migrate run
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov

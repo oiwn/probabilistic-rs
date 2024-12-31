@@ -56,4 +56,4 @@ jobs:
         run: cargo test --lib --all-features --workspace
         
       - name: Run integration tests
-        run: cargo test --test '*' --all-features --workspace
+        run: cargo test --test "*" --all-features --workspace
