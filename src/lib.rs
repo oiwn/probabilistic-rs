@@ -30,8 +30,13 @@ use std::io::Cursor;
 use std::time::{Duration, SystemTime};
 
 pub mod backends;
+pub mod inmemory_storage;
+#[cfg(feature = "redb")]
+pub mod redb_storage;
+#[cfg(feature = "redis")]
+pub mod redis_storage;
 
-use crate::backends::BloomFilterStorage;
+use crate::backends::{BloomError, BloomFilterStorage, Result};
 
 /// A type alias for the hash function used in the Bloom filter.
 ///
@@ -58,7 +63,7 @@ use crate::backends::BloomFilterStorage;
 /// The hash function computes `num_hashes` hash indices for the given `item`,
 /// ensuring each index is within the range `[0, capacity)`. These indices are
 /// used to set or check bits in the Bloom filter's bit vector.
-type HashFunction = fn(&[u8], usize, usize) -> Vec<u32>;
+pub type HashFunction = fn(&[u8], usize, usize) -> Vec<u32>;
 
 fn hash_murmur32(key: &[u8]) -> u32 {
     let mut cursor = Cursor::new(key);
@@ -83,6 +88,15 @@ pub fn default_hash_function(
         .collect()
 }
 
+fn optimal_bit_vector_size(n: usize, fpr: f64) -> usize {
+    let ln2 = std::f64::consts::LN_2;
+    ((-(n as f64) * fpr.ln()) / (ln2 * ln2)).ceil() as usize
+}
+
+fn optimal_num_hashes(n: usize, m: usize) -> usize {
+    ((m as f64 / n as f64) * std::f64::consts::LN_2).round() as usize
+}
+
 pub struct SlidingBloomFilter<S: BloomFilterStorage> {
     storage: S,
     hash_function: HashFunction,
@@ -94,15 +108,6 @@ pub struct SlidingBloomFilter<S: BloomFilterStorage> {
     current_level_index: usize,
 }
 
-fn optimal_bit_vector_size(n: usize, fpr: f64) -> usize {
-    let ln2 = std::f64::consts::LN_2;
-    ((-(n as f64) * fpr.ln()) / (ln2 * ln2)).ceil() as usize
-}
-
-fn optimal_num_hashes(n: usize, m: usize) -> usize {
-    ((m as f64 / n as f64) * std::f64::consts::LN_2).round() as usize
-}
-
 impl<S: BloomFilterStorage> SlidingBloomFilter<S> {
     pub fn new(
         capacity: usize,
@@ -110,13 +115,13 @@ impl<S: BloomFilterStorage> SlidingBloomFilter<S> {
         level_time: Duration,
         max_levels: usize,
         hash_function: HashFunction,
-    ) -> Self {
+    ) -> Result<Self> {
         let bit_vector_size =
             optimal_bit_vector_size(capacity, false_positive_rate);
         let num_hashes = optimal_num_hashes(capacity, bit_vector_size);
 
-        Self {
-            storage: S::new(bit_vector_size, max_levels),
+        Ok(Self {
+            storage: S::new(bit_vector_size, max_levels)?,
             hash_function,
             capacity,
             num_hashes,
@@ -124,73 +129,88 @@ impl<S: BloomFilterStorage> SlidingBloomFilter<S> {
             level_time,
             max_levels,
             current_level_index: 0,
-        }
+        })
     }
 
-    pub fn cleanup_expired_levels(&mut self) {
+    pub fn cleanup_expired_levels(&mut self) -> Result<()> {
         let now = SystemTime::now();
         for level in 0..self.max_levels {
-            if let Some(timestamp) = self.storage.get_timestamp(level) {
-                if now.duration_since(timestamp).unwrap()
+            if let Some(timestamp) = self.storage.get_timestamp(level)? {
+                if now
+                    .duration_since(timestamp)
+                    .map_err(|e| BloomError::StorageError(e.to_string()))?
                     >= self.level_time * self.max_levels as u32
                 {
-                    self.storage.clear_level(level);
+                    self.storage.clear_level(level)?;
                 }
             }
         }
+        Ok(())
     }
 
-    fn should_create_new_level(&self) -> bool {
+    fn should_create_new_level(&self) -> Result<bool> {
         let current_level = self.current_level_index;
-        if let Some(last_timestamp) = self.storage.get_timestamp(current_level) {
+        if let Some(last_timestamp) = self.storage.get_timestamp(current_level)? {
             let now = SystemTime::now();
-            now.duration_since(last_timestamp).unwrap() >= self.level_time
+            Ok(now
+                .duration_since(last_timestamp)
+                .map_err(|e| BloomError::StorageError(e.to_string()))?
+                >= self.level_time)
         } else {
-            true
+            Ok(true)
         }
     }
 
-    fn create_new_level(&mut self) {
+    fn create_new_level(&mut self) -> Result<()> {
         // Advance current level index in a circular manner
         self.current_level_index =
             (self.current_level_index + 1) % self.max_levels;
         // Clear the level at the new current level index
-        self.storage.clear_level(self.current_level_index);
+        self.storage.clear_level(self.current_level_index)?;
         // Set the timestamp
         self.storage
-            .set_timestamp(self.current_level_index, SystemTime::now());
+            .set_timestamp(self.current_level_index, SystemTime::now())?;
+        Ok(())
     }
 
-    pub fn insert(&mut self, item: &[u8]) {
-        if self.should_create_new_level() {
-            self.create_new_level();
+    pub fn insert(&mut self, item: &[u8]) -> Result<()> {
+        if self.should_create_new_level()? {
+            self.create_new_level()?;
         }
         let current_level = self.current_level_index;
         let hashes = (self.hash_function)(item, self.num_hashes, self.capacity);
-        for hash in hashes {
-            self.storage.set_bit(current_level, hash as usize);
+        for &hash in &hashes {
+            self.storage.set_bit(current_level, hash as usize)?;
         }
+        Ok(())
     }
 
-    pub fn query(&self, item: &[u8]) -> bool {
+    pub fn query(&self, item: &[u8]) -> Result<bool> {
         let hashes = (self.hash_function)(item, self.num_hashes, self.capacity);
         let now = SystemTime::now();
+
         for level in 0..self.max_levels {
-            if let Some(timestamp) = self.storage.get_timestamp(level) {
-                #[allow(clippy::collapsible_if)]
-                if now.duration_since(timestamp).unwrap()
-                    <= self.level_time * self.max_levels as u32
-                {
-                    if hashes
-                        .iter()
-                        .all(|&hash| self.storage.get_bit(level, hash as usize))
-                    {
-                        return true;
+            if let Some(timestamp) = self.storage.get_timestamp(level)? {
+                let elapsed = now
+                    .duration_since(timestamp)
+                    .map_err(|e| BloomError::StorageError(e.to_string()))?;
+
+                if elapsed <= self.level_time * self.max_levels as u32 {
+                    let all_bits_set = hashes.iter().try_fold(
+                        true,
+                        |acc, &hash| -> Result<bool> {
+                            Ok(acc
+                                && self.storage.get_bit(level, hash as usize)?)
+                        },
+                    )?;
+
+                    if all_bits_set {
+                        return Ok(true);
                     }
                 }
             }
         }
-        false
+        Ok(false)
     }
 }
 
@@ -236,14 +256,15 @@ mod tests {
             Duration::from_secs(10),
             5,
             hash_function,
-        );
+        )
+        .unwrap();
 
-        bloom_filter.insert(b"some data");
-        bloom_filter.insert(b"another data");
-        assert!(bloom_filter.query(b"some data"));
-        assert!(bloom_filter.query(b"another data"));
-        assert!(!bloom_filter.query(b"some"));
-        assert!(!bloom_filter.query(b"another"));
+        bloom_filter.insert(b"some data").unwrap();
+        bloom_filter.insert(b"another data").unwrap();
+        assert!(bloom_filter.query(b"some data").unwrap());
+        assert!(bloom_filter.query(b"another data").unwrap());
+        assert!(!bloom_filter.query(b"some").unwrap());
+        assert!(!bloom_filter.query(b"another").unwrap());
     }
 
     #[test]
@@ -254,18 +275,19 @@ mod tests {
             Duration::from_secs(1),
             2,
             default_hash_function,
-        );
+        )
+        .unwrap();
 
-        bloom_filter.insert(b"item1");
-        assert!(bloom_filter.query(b"item1"));
+        bloom_filter.insert(b"item1").unwrap();
+        assert!(bloom_filter.query(b"item1").unwrap());
 
         // Wait enough time for the item to expire
         thread::sleep(Duration::from_secs(5)); // Exceeds MAX_LEVELS * LEVEL_TIME
 
         // Call cleanup explicitly
-        bloom_filter.cleanup_expired_levels();
+        bloom_filter.cleanup_expired_levels().unwrap();
 
-        assert!(!bloom_filter.query(b"item1"));
+        assert!(!bloom_filter.query(b"item1").unwrap());
     }
 
     #[test]
@@ -276,26 +298,27 @@ mod tests {
             Duration::from_secs(2),
             5,
             default_hash_function,
-        );
+        )
+        .unwrap();
 
         let items: Vec<&[u8]> =
             vec![b"apple", b"banana", b"cherry", b"date", b"elderberry"];
 
         for item in &items {
-            bloom_filter.insert(item);
+            bloom_filter.insert(item).unwrap();
         }
 
         // Query immediately
         for item in &items {
-            assert!(bloom_filter.query(item));
+            assert!(bloom_filter.query(item).unwrap());
         }
 
         // Wait less than total decay time
         thread::sleep(Duration::from_secs(5)); // Less than MAX_LEVELS * LEVEL_TIME
-        bloom_filter.cleanup_expired_levels();
+        bloom_filter.cleanup_expired_levels().unwrap();
 
         for item in &items {
-            assert!(bloom_filter.query(item));
+            assert!(bloom_filter.query(item).unwrap());
         }
     }
 
@@ -307,16 +330,17 @@ mod tests {
             Duration::from_secs(1),
             3,
             default_hash_function,
-        );
+        )
+        .unwrap();
 
-        bloom_filter.insert(b"item_to_expire");
-        assert!(bloom_filter.query(b"item_to_expire"));
+        bloom_filter.insert(b"item_to_expire").unwrap();
+        assert!(bloom_filter.query(b"item_to_expire").unwrap());
 
         // Wait for the item to expire
         thread::sleep(Duration::from_secs(4)); // Exceeds MAX_LEVELS * LEVEL_TIME
-        bloom_filter.cleanup_expired_levels();
+        bloom_filter.cleanup_expired_levels().unwrap();
 
-        assert!(!bloom_filter.query(b"item_to_expire"));
+        assert!(!bloom_filter.query(b"item_to_expire").unwrap());
     }
 
     #[test]
@@ -327,16 +351,17 @@ mod tests {
             Duration::from_secs(1),
             3,
             default_hash_function,
-        );
+        )
+        .unwrap();
 
-        bloom_filter.insert(b"test_item");
-        assert!(bloom_filter.query(b"test_item"));
+        bloom_filter.insert(b"test_item").unwrap();
+        assert!(bloom_filter.query(b"test_item").unwrap());
 
         // Wait for total decay time
         thread::sleep(Duration::from_secs(4));
-        bloom_filter.cleanup_expired_levels();
+        bloom_filter.cleanup_expired_levels().unwrap();
         assert!(
-            !bloom_filter.query(b"test_item"),
+            !bloom_filter.query(b"test_item").unwrap(),
             "Item should have expired after total decay time"
         );
     }
@@ -349,12 +374,13 @@ mod tests {
             Duration::from_secs(1),
             5,
             default_hash_function,
-        );
+        )
+        .unwrap();
 
         // Insert old items
         for i in 0..5 {
             let item = format!("old_item_{}", i);
-            bloom_filter.insert(item.as_bytes());
+            bloom_filter.insert(item.as_bytes()).unwrap();
             thread::sleep(Duration::from_millis(200));
         }
 
@@ -364,16 +390,16 @@ mod tests {
         // Insert new items
         for i in 0..5 {
             let item = format!("new_item_{}", i);
-            bloom_filter.insert(item.as_bytes());
+            bloom_filter.insert(item.as_bytes()).unwrap();
         }
 
-        bloom_filter.cleanup_expired_levels();
+        bloom_filter.cleanup_expired_levels().unwrap();
 
         // Old items should have expired
         for i in 0..5 {
             let item = format!("old_item_{}", i);
             assert!(
-                !bloom_filter.query(item.as_bytes()),
+                !bloom_filter.query(item.as_bytes()).unwrap(),
                 "Old item {} should have expired",
                 item
             );
@@ -383,7 +409,7 @@ mod tests {
         for i in 0..5 {
             let item = format!("new_item_{}", i);
             assert!(
-                bloom_filter.query(item.as_bytes()),
+                bloom_filter.query(item.as_bytes()).unwrap(),
                 "New item {} should still be present",
                 item
             );
@@ -398,14 +424,15 @@ mod tests {
             Duration::from_secs(1),
             5,
             default_hash_function,
-        );
+        )
+        .unwrap();
 
         // This loop with end in 1second
         let inserts_time = SystemTime::now();
         for i in 0..10 {
             let item = format!("item_{}", i);
-            bloom_filter.insert(item.as_bytes());
-            assert!(bloom_filter.query(item.as_bytes()));
+            bloom_filter.insert(item.as_bytes()).unwrap();
+            assert!(bloom_filter.query(item.as_bytes()).unwrap());
             // 0.5s so 2 elements should to to the each level
             // and total time passed - 5 seconds
             thread::sleep(Duration::from_millis(500))
@@ -432,7 +459,7 @@ mod tests {
 
         for i in 0..bloom_filter.storage.num_levels() {
             assert!(
-                bloom_filter.storage.levels[i].len() >= 1,
+                !bloom_filter.storage.levels[i].is_empty(),
                 "Each level should contain at least 1 elements"
             );
         }
@@ -442,13 +469,13 @@ mod tests {
 
         // Wait for earlier items to expire
         thread::sleep(Duration::from_secs(3));
-        bloom_filter.cleanup_expired_levels();
+        bloom_filter.cleanup_expired_levels().unwrap();
 
         // Items 0 to 6 should have expired
         for i in 0..8 {
             let item = format!("item_{}", i);
             assert!(
-                !bloom_filter.query(item.as_bytes()),
+                !bloom_filter.query(item.as_bytes()).unwrap(),
                 "Item {} should have expired",
                 item
             );
@@ -458,7 +485,7 @@ mod tests {
         for i in 8..10 {
             let item = format!("item_{}", i);
             assert!(
-                bloom_filter.query(item.as_bytes()),
+                bloom_filter.query(item.as_bytes()).unwrap(),
                 "Item {} should still be present",
                 item
             );
@@ -475,7 +502,8 @@ mod tests {
             Duration::from_secs(2),
             5,
             default_hash_function,
-        );
+        )
+        .unwrap();
 
         let num_items = 1000;
         let mut rng = rand::thread_rng();
@@ -484,7 +512,7 @@ mod tests {
         // Insert random items
         for _ in 0..num_items {
             let item: Vec<u8> = (0..10).map(|_| rng.gen()).collect();
-            bloom_filter.insert(&item);
+            bloom_filter.insert(&item).unwrap();
             inserted_items.push(item);
         }
 
@@ -492,11 +520,11 @@ mod tests {
         let mut false_positives = 0;
         let num_tests = 1000;
 
-        bloom_filter.cleanup_expired_levels();
+        bloom_filter.cleanup_expired_levels().unwrap();
 
         for _ in 0..num_tests {
             let item: Vec<u8> = (0..10).map(|_| rng.gen()).collect();
-            if bloom_filter.query(&item) {
+            if bloom_filter.query(&item).unwrap() {
                 // Check if the item was actually inserted
                 if !inserted_items.contains(&item) {
                     false_positives += 1;
@@ -518,14 +546,16 @@ mod tests {
         use std::sync::{Arc, Mutex};
         use std::thread;
 
-        let bloom_filter =
-            Arc::new(Mutex::new(SlidingBloomFilter::<InMemoryStorage>::new(
+        let bloom_filter = Arc::new(Mutex::new(
+            SlidingBloomFilter::<InMemoryStorage>::new(
                 1000,
                 0.01,
                 Duration::from_secs(1),
                 5,
                 default_hash_function,
-            )));
+            )
+            .unwrap(),
+        ));
 
         let handles: Vec<_> = (0..10)
             .map(|i| {
@@ -533,7 +563,7 @@ mod tests {
                 thread::spawn(move || {
                     let item = format!("concurrent_item_{}", i);
                     let mut bf = bloom_filter.lock().unwrap();
-                    bf.insert(item.as_bytes());
+                    bf.insert(item.as_bytes()).unwrap();
                 })
             })
             .collect();
@@ -542,13 +572,17 @@ mod tests {
             handle.join().unwrap();
         }
 
-        bloom_filter.lock().unwrap().cleanup_expired_levels();
+        bloom_filter
+            .lock()
+            .unwrap()
+            .cleanup_expired_levels()
+            .unwrap();
 
         // Verify that all items have been inserted
         for i in 0..10 {
             let item = format!("concurrent_item_{}", i);
             let bf = bloom_filter.lock().unwrap();
-            assert!(bf.query(item.as_bytes()));
+            assert!(bf.query(item.as_bytes()).unwrap());
         }
     }
 
@@ -562,23 +596,24 @@ mod tests {
             Duration::from_secs(1),
             5,
             default_hash_function,
-        );
+        )
+        .unwrap();
 
         // Insert more items than capacity to test behavior
         for i in 0..200 {
             let item = format!("item_{}", i);
-            bloom_filter.insert(item.as_bytes());
+            bloom_filter.insert(item.as_bytes()).unwrap();
 
-            bloom_filter.cleanup_expired_levels();
-            assert!(bloom_filter.query(item.as_bytes()));
+            bloom_filter.cleanup_expired_levels().unwrap();
+            assert!(bloom_filter.query(item.as_bytes()).unwrap());
         }
 
-        bloom_filter.cleanup_expired_levels();
+        bloom_filter.cleanup_expired_levels().unwrap();
         // Expect higher false positive rate due to saturation
         let false_queries = (200..300)
             .filter(|i| {
                 let item = format!("item_{}", i);
-                bloom_filter.query(item.as_bytes())
+                bloom_filter.query(item.as_bytes()).unwrap()
             })
             .count();
 
@@ -599,25 +634,26 @@ mod tests {
             Duration::from_secs(1),
             5,
             default_hash_function,
-        );
+        )
+        .unwrap();
 
-        bloom_filter.insert(b"persistent_item");
+        bloom_filter.insert(b"persistent_item").unwrap();
 
         // Insert items that should expire
-        bloom_filter.insert(b"temp_item");
+        bloom_filter.insert(b"temp_item").unwrap();
 
-        bloom_filter.cleanup_expired_levels();
-        assert!(bloom_filter.query(b"temp_item"));
+        bloom_filter.cleanup_expired_levels().unwrap();
+        assert!(bloom_filter.query(b"temp_item").unwrap());
 
         // Wait for the temporary item to expire
         thread::sleep(Duration::from_secs(6)); // Exceeds MAX_LEVELS * LEVEL_TIME
-        bloom_filter.cleanup_expired_levels();
+        bloom_filter.cleanup_expired_levels().unwrap();
 
         // "temp_item" should be expired
-        assert!(!bloom_filter.query(b"temp_item"));
+        assert!(!bloom_filter.query(b"temp_item").unwrap());
 
         // "persistent_item" should be also expired
-        assert!(!bloom_filter.query(b"persistent_item"));
+        assert!(!bloom_filter.query(b"persistent_item").unwrap());
     }
 
     #[test]
@@ -630,12 +666,13 @@ mod tests {
             Duration::from_millis(500),
             MAX_LEVELS,
             default_hash_function,
-        );
+        )
+        .unwrap();
 
         // Rapid insertions to test level creation
         for i in 0..10 {
             let item = format!("rapid_item_{}", i);
-            bloom_filter.insert(item.as_bytes());
+            bloom_filter.insert(item.as_bytes()).unwrap();
             thread::sleep(Duration::from_millis(100)); // Sleep less than LEVEL_TIME
         }
 

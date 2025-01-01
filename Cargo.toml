@@ -4,9 +4,21 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bitvec = "1.0.1"
-fnv = "1.0.7"
-murmur3 = "0.5.2"
+bincode = "1"
+bitvec = "1"
+fnv = "1"
+murmur3 = "0.5"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+redb = { version = "2", optional = true }
+async-trait = { version = "0.1", optional = true }
+rustis = { version = "0.13", features = ["tokio-runtime"], optional = true }
+tokio = { version = "1.42.0", features = ["full"], optional = true }
 
 [dev-dependencies]
-rand = "0.8.5"
+rand = "0.8"
+expiring-bloom-rs = { path = ".", features = [] }
+
+[features]
+redis = ["dep:rustis", "dep:tokio", "dep:async-trait"]
+redb = ["dep:redb"]

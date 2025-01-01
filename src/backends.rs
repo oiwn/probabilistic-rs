@@ -1,54 +1,53 @@
-// use bitvec::prelude::*;
 use std::time::SystemTime;
+use thiserror::Error;
+
+pub use crate::inmemory_storage::InMemoryStorage;
+
+pub type Result<T> = std::result::Result<T, BloomError>;
+
+#[derive(Error, Debug)]
+pub enum BloomError {
+    #[error("Storage operation failed: {0}")]
+    StorageError(String),
+
+    #[error("Index out of bounds: {index} >= {capacity}")]
+    IndexOutOfBounds { index: usize, capacity: usize },
+
+    #[error("Invalid level: {level} >= {max_levels}")]
+    InvalidLevel { level: usize, max_levels: usize },
+
+    #[cfg(feature = "redis")]
+    #[error("Redis error: {0}")]
+    RedisError(#[from] rustis::Error),
+
+    #[cfg(feature = "redb")]
+    #[error("ReDB error: {0}")]
+    RedbError(#[from] redb::Error),
+
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
+}
 
 // Trait for the storage backend
 pub trait BloomFilterStorage {
-    fn new(capacity: usize, max_levels: usize) -> Self;
-    fn set_bit(&mut self, level: usize, index: usize);
-    fn get_bit(&self, level: usize, index: usize) -> bool;
-    fn clear_level(&mut self, level: usize);
-    fn set_timestamp(&mut self, level: usize, timestamp: SystemTime);
-    fn get_timestamp(&self, level: usize) -> Option<SystemTime>;
+    /// Creates a new storage instance
+    fn new(capacity: usize, max_levels: usize) -> Result<Self>
+    where
+        Self: Sized;
+    /// Sets a bit at the specified level and index
+    fn set_bit(&mut self, level: usize, index: usize) -> Result<()>;
+    /// Gets a bit value at the specified level and index
+    fn get_bit(&self, level: usize, index: usize) -> Result<bool>;
+    /// Clears all bits in the specified level
+    fn clear_level(&mut self, level: usize) -> Result<()>;
+    /// Sets the timestamp for a level
+    fn set_timestamp(
+        &mut self,
+        level: usize,
+        timestamp: SystemTime,
+    ) -> Result<()>;
+    /// Gets the timestamp for a level
+    fn get_timestamp(&self, level: usize) -> Result<Option<SystemTime>>;
+    /// Returns the number of levels in the storage
     fn num_levels(&self) -> usize;
-}
-
-// In-memory storage implementation
-pub struct InMemoryStorage {
-    pub levels: Vec<Vec<bool>>,
-    timestamps: Vec<SystemTime>,
-    capacity: usize,
-}
-
-impl BloomFilterStorage for InMemoryStorage {
-    fn new(capacity: usize, max_levels: usize) -> Self {
-        Self {
-            levels: vec![vec![false; capacity]; max_levels],
-            timestamps: vec![SystemTime::now(); max_levels],
-            capacity,
-        }
-    }
-
-    fn set_bit(&mut self, level: usize, index: usize) {
-        self.levels[level][index] = true;
-    }
-
-    fn get_bit(&self, level: usize, index: usize) -> bool {
-        self.levels[level][index]
-    }
-
-    fn clear_level(&mut self, level: usize) {
-        self.levels[level] = vec![false; self.capacity];
-    }
-
-    fn set_timestamp(&mut self, level: usize, timestamp: SystemTime) {
-        self.timestamps[level] = timestamp;
-    }
-
-    fn get_timestamp(&self, level: usize) -> Option<SystemTime> {
-        Some(self.timestamps[level])
-    }
-
-    fn num_levels(&self) -> usize {
-        self.levels.len()
-    }
 }
