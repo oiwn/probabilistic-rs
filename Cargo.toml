@@ -17,7 +17,7 @@ tokio = { version = "1.42.0", features = ["full"], optional = true }
 
 [dev-dependencies]
 rand = "0.8"
-expiring-bloom-rs = { path = ".", features = [] }
+expiring-bloom-rs = { path = ".", features = ["redb"] }
 
 [features]
 redis = ["dep:rustis", "dep:tokio", "dep:async-trait"]

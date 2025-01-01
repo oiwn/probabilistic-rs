@@ -1,9 +1,11 @@
-/*
-use crate::backends::BloomFilterStorage;
-use redb::{Database, ReadableTable, TableDefinition, WriteTransaction};
+use crate::backends::{BloomError, BloomFilterStorage, Result};
+use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::SystemTime;
+
+const LEVELS_TABLE: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("levels");
 
 #[derive(Serialize, Deserialize)]
 struct LevelData {
@@ -13,139 +15,191 @@ struct LevelData {
 
 pub struct RedbStorage {
     db: Arc<Database>,
-    levels_table: TableDefinition<'static, u64, Vec<u8>>, // u64 key for level index, Vec<u8> for serialized LevelData
     capacity: usize,
     max_levels: usize,
 }
 
 impl RedbStorage {
-    pub fn open(path: &str, capacity: usize, max_levels: usize) -> Self {
-        // Open or create the database at the specified path
-        let db = Database::create(path).unwrap();
-        let levels_table = TableDefinition::new("levels");
+    pub fn open(path: &str, capacity: usize, max_levels: usize) -> Result<Self> {
+        // Open or create the database
+        let db = Database::create(path)
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+        let db = Arc::new(db);
 
-        // Initialize levels if they don't exist
+        // Initialize the database with empty levels if they don't exist
+        let write_txn = db
+            .begin_write()
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
         {
-            let write_txn = db.begin_write().unwrap();
-            {
-                let mut table = write_txn.open_table(levels_table).unwrap();
-                for level in 0..max_levels {
-                    if table.get(level as u64).unwrap().is_none() {
-                        let level_data = LevelData {
-                            bits: vec![false; capacity],
-                            timestamp: SystemTime::now(),
-                        };
-                        let serialized = bincode::serialize(&level_data).unwrap();
-                        table.insert(level as u64, &serialized).unwrap();
-                    }
+            let mut table = write_txn
+                .open_table(LEVELS_TABLE)
+                .map_err(|e| BloomError::StorageError(e.to_string()))?;
+
+            // Initialize each level if it doesn't exist
+            for level in 0..max_levels {
+                let level_key = level.to_le_bytes();
+                if table
+                    .get(&level_key[..])
+                    .map_err(|e| BloomError::StorageError(e.to_string()))?
+                    .is_none()
+                {
+                    let level_data = LevelData {
+                        bits: vec![false; capacity],
+                        timestamp: SystemTime::now(),
+                    };
+                    let serialized =
+                        bincode::serialize(&level_data).map_err(|e| {
+                            BloomError::SerializationError(e.to_string())
+                        })?;
+                    table
+                        .insert(&level_key[..], &serialized[..])
+                        .map_err(|e| BloomError::StorageError(e.to_string()))?;
                 }
             }
-            write_txn.commit().unwrap();
         }
+        write_txn
+            .commit()
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
 
-        Self {
-            db: Arc::new(db),
-            levels_table,
+        Ok(Self {
+            db,
             capacity,
             max_levels,
+        })
+    }
+
+    fn get_level_data(&self, level: usize) -> Result<LevelData> {
+        let read_txn = self
+            .db
+            .begin_read()
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+        let table = read_txn
+            .open_table(LEVELS_TABLE)
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+        let level_key = level.to_le_bytes();
+        let data = table
+            .get(&level_key[..])
+            .map_err(|e| BloomError::StorageError(e.to_string()))?
+            .ok_or_else(|| BloomError::InvalidLevel {
+                level,
+                max_levels: self.max_levels,
+            })?;
+
+        bincode::deserialize(data.value())
+            .map_err(|e| BloomError::SerializationError(e.to_string()))
+    }
+
+    fn save_level_data(&self, level: usize, data: &LevelData) -> Result<()> {
+        let write_txn = self
+            .db
+            .begin_write()
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+        {
+            let mut table = write_txn
+                .open_table(LEVELS_TABLE)
+                .map_err(|e| BloomError::StorageError(e.to_string()))?;
+            let level_key = level.to_le_bytes();
+            let serialized = bincode::serialize(data)
+                .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+            table
+                .insert(&level_key[..], &serialized[..])
+                .map_err(|e| BloomError::StorageError(e.to_string()))?;
         }
+        write_txn
+            .commit()
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+        Ok(())
     }
 }
 
 impl BloomFilterStorage for RedbStorage {
-    fn new(_capacity: usize, _max_levels: usize) -> Self {
-        panic!("Use RedbStorage::open(path, capacity, max_levels) instead");
+    fn new(_capacity: usize, _max_levels: usize) -> Result<Self> {
+        Err(BloomError::StorageError(
+            "Use RedbStorage::open() instead".to_string(),
+        ))
     }
 
-    fn set_bit(&mut self, level: usize, index: usize) {
-        let db = Arc::clone(&self.db);
-        let levels_table = self.levels_table.clone();
-        let capacity = self.capacity;
-
-        let write_txn = db.begin_write().unwrap();
-        {
-            let mut table = write_txn.open_table(levels_table).unwrap();
-            let level_data_bytes = table.get(level as u64).unwrap().unwrap();
-            let mut level_data: LevelData =
-                bincode::deserialize(&level_data_bytes.value()).unwrap();
-
-            if index >= capacity {
-                panic!("Index out of bounds");
-            }
-
-            level_data.bits[index] = true;
-
-            let serialized = bincode::serialize(&level_data).unwrap();
-            table.insert(level as u64, &serialized).unwrap();
+    fn set_bit(&mut self, level: usize, index: usize) -> Result<()> {
+        if index >= self.capacity {
+            return Err(BloomError::IndexOutOfBounds {
+                index,
+                capacity: self.capacity,
+            });
         }
-        write_txn.commit().unwrap();
-    }
-
-    fn get_bit(&self, level: usize, index: usize) -> bool {
-        let db = Arc::clone(&self.db);
-        let levels_table = self.levels_table.clone();
-
-        let read_txn = db.begin_read().unwrap();
-        let table = read_txn.open_table(levels_table).unwrap();
-        let level_data_bytes = table.get(level as u64).unwrap().unwrap();
-        let level_data: LevelData =
-            bincode::deserialize(&level_data_bytes.value()).unwrap();
-
-        level_data.bits[index]
-    }
-
-    fn clear_level(&mut self, level: usize) {
-        let db = Arc::clone(&self.db);
-        let levels_table = self.levels_table.clone();
-        let capacity = self.capacity;
-
-        let mut write_txn = db.begin_write().unwrap();
-        {
-            let mut table = write_txn.open_table(levels_table).unwrap();
-            let mut level_data = LevelData {
-                bits: vec![false; capacity],
-                timestamp: SystemTime::now(),
-            };
-            let serialized = bincode::serialize(&level_data).unwrap();
-            table.insert(level as u64, &serialized).unwrap();
+        if level >= self.max_levels {
+            return Err(BloomError::InvalidLevel {
+                level,
+                max_levels: self.max_levels,
+            });
         }
-        write_txn.commit().unwrap();
+
+        let mut level_data = self.get_level_data(level)?;
+        level_data.bits[index] = true;
+        self.save_level_data(level, &level_data)
     }
 
-    fn set_timestamp(&mut self, level: usize, timestamp: SystemTime) {
-        let db = Arc::clone(&self.db);
-        let levels_table = self.levels_table.clone();
-
-        let mut write_txn = db.begin_write().unwrap();
-        {
-            let mut table = write_txn.open_table(levels_table).unwrap();
-            let level_data_bytes = table.get(level as u64).unwrap().unwrap();
-            let mut level_data: LevelData =
-                bincode::deserialize(&level_data_bytes.value()).unwrap();
-
-            level_data.timestamp = timestamp;
-
-            let serialized = bincode::serialize(&level_data).unwrap();
-            table.insert(level as u64, &serialized).unwrap();
+    fn get_bit(&self, level: usize, index: usize) -> Result<bool> {
+        if index >= self.capacity {
+            return Err(BloomError::IndexOutOfBounds {
+                index,
+                capacity: self.capacity,
+            });
         }
-        write_txn.commit().unwrap();
+        if level >= self.max_levels {
+            return Err(BloomError::InvalidLevel {
+                level,
+                max_levels: self.max_levels,
+            });
+        }
+
+        let level_data = self.get_level_data(level)?;
+        Ok(level_data.bits[index])
     }
 
-    fn get_timestamp(&self, level: usize) -> Option<SystemTime> {
-        let db = Arc::clone(&self.db);
-        let levels_table = self.levels_table.clone();
+    fn clear_level(&mut self, level: usize) -> Result<()> {
+        if level >= self.max_levels {
+            return Err(BloomError::InvalidLevel {
+                level,
+                max_levels: self.max_levels,
+            });
+        }
 
-        let read_txn = db.begin_read().unwrap();
-        let table = read_txn.open_table(&levels_table).unwrap();
-        let level_data_bytes = table.get(&level as u64).unwrap().unwrap();
-        let level_data: LevelData =
-            bincode::deserialize(level_data_bytes.value()).unwrap();
+        let mut level_data = self.get_level_data(level)?;
+        level_data.bits = vec![false; self.capacity];
+        level_data.timestamp = SystemTime::now();
+        self.save_level_data(level, &level_data)
+    }
 
-        Some(level_data.timestamp)
+    fn set_timestamp(
+        &mut self,
+        level: usize,
+        timestamp: SystemTime,
+    ) -> Result<()> {
+        if level >= self.max_levels {
+            return Err(BloomError::InvalidLevel {
+                level,
+                max_levels: self.max_levels,
+            });
+        }
+
+        let mut level_data = self.get_level_data(level)?;
+        level_data.timestamp = timestamp;
+        self.save_level_data(level, &level_data)
+    }
+
+    fn get_timestamp(&self, level: usize) -> Result<Option<SystemTime>> {
+        if level >= self.max_levels {
+            return Err(BloomError::InvalidLevel {
+                level,
+                max_levels: self.max_levels,
+            });
+        }
+
+        let level_data = self.get_level_data(level)?;
+        Ok(Some(level_data.timestamp))
     }
 
     fn num_levels(&self) -> usize {
         self.max_levels
     }
 }
-*/
