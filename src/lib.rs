@@ -196,11 +196,13 @@ impl<S: BloomFilterStorage> SlidingBloomFilter<S> {
                     .map_err(|e| BloomError::StorageError(e.to_string()))?;
 
                 if elapsed <= self.level_time * self.max_levels as u32 {
-                    let all_bits_set =
-                        hashes.iter().try_fold(true, |acc, &hash| {
+                    let all_bits_set = hashes.iter().try_fold(
+                        true,
+                        |acc, &hash| -> Result<bool> {
                             Ok(acc
                                 && self.storage.get_bit(level, hash as usize)?)
-                        })?;
+                        },
+                    )?;
 
                     if all_bits_set {
                         return Ok(true);
