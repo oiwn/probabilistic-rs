@@ -14,6 +14,7 @@ redb = { version = "2", optional = true }
 async-trait = { version = "0.1", optional = true }
 rustis = { version = "0.13", features = ["tokio-runtime"], optional = true }
 tokio = { version = "1.42.0", features = ["full"], optional = true }
+derive_builder = "0.20.2"
 
 [dev-dependencies]
 rand = "0.8"

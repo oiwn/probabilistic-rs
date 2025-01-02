@@ -1,8 +1,13 @@
-use crate::expiring_bloom::{BloomError, BloomFilterStorage, Result};
+use crate::expiring_bloom::{
+    default_hash_function, BloomError, BloomFilterStorage, Result,
+    SlidingBloomFilter,
+};
+use derive_builder::Builder;
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 const LEVELS_TABLE: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("levels");
@@ -19,8 +24,72 @@ pub struct RedbStorage {
     max_levels: usize,
 }
 
-// TODO: create builder to create SlidingBloomFilter with storage at once, i.e.
-// API to create RedbExpiringBloomFilter
+#[derive(Builder, Debug)]
+#[builder(pattern = "owned")]
+pub struct RedbExpiringBloomFilterOptions {
+    /// Path to the ReDB database file
+    path: PathBuf,
+    /// Maximum number of elements the filter is expected to contain
+    capacity: usize,
+    /// How long elements should stay in the filter
+    expiration_time: Duration,
+    /// False positive rate (default: 0.01)
+    #[builder(default = "0.01")]
+    false_positive_rate: f64,
+    /// Number of filter levels (default: 5)
+    #[builder(default = "5")]
+    max_levels: usize,
+}
+
+pub struct RedbExpiringBloomFilter {
+    filter: SlidingBloomFilter<RedbStorage>,
+}
+
+impl RedbExpiringBloomFilter {
+    /// Creates a new RedbExpiringBloomFilter from the provided options
+    pub fn new(opts: RedbExpiringBloomFilterOptions) -> Result<Self> {
+        // Calculate level duration based on expiration time and max levels
+        let level_duration = Duration::from_secs(
+            opts.expiration_time.as_secs() / opts.max_levels as u64,
+        );
+
+        // Create ReDB storage
+        let storage = RedbStorage::open(
+            opts.path.to_str().ok_or_else(|| {
+                BloomError::StorageError("Invalid path".to_string())
+            })?,
+            opts.capacity,
+            opts.max_levels,
+        )?;
+
+        // Create the sliding bloom filter
+        let filter = SlidingBloomFilter::new(
+            storage,
+            opts.capacity,
+            opts.false_positive_rate,
+            level_duration,
+            opts.max_levels,
+            default_hash_function,
+        )?;
+
+        Ok(Self { filter })
+    }
+
+    /// Insert an item into the filter
+    pub fn insert(&mut self, item: &[u8]) -> Result<()> {
+        self.filter.insert(item)
+    }
+
+    /// Query if an item might be in the filter
+    pub fn query(&self, item: &[u8]) -> Result<bool> {
+        self.filter.query(item)
+    }
+
+    /// Clean up expired items from the filter
+    pub fn cleanup_expired(&mut self) -> Result<()> {
+        self.filter.cleanup_expired_levels()
+    }
+}
 
 impl RedbStorage {
     pub fn open(path: &str, capacity: usize, max_levels: usize) -> Result<Self> {
@@ -135,6 +204,7 @@ impl BloomFilterStorage for RedbStorage {
         self.save_level_data(level, &level_data)
     }
 
+    #[inline]
     fn get_bit(&self, level: usize, index: usize) -> Result<bool> {
         if index >= self.capacity {
             return Err(BloomError::IndexOutOfBounds {
@@ -198,5 +268,58 @@ impl BloomFilterStorage for RedbStorage {
 
     fn num_levels(&self) -> usize {
         self.max_levels
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_builder_required_fields() {
+        // Test builder with only required fields
+        let result = RedbExpiringBloomFilterOptionsBuilder::default()
+            .path("filter_tests.redb".into())
+            .capacity(1000)
+            .expiration_time(Duration::from_secs(3600))
+            .build();
+
+        assert!(result.is_ok());
+        let opts = result.unwrap();
+        assert_eq!(opts.false_positive_rate, 0.01); // Check default value
+        assert_eq!(opts.max_levels, 5); // Check default value
+    }
+
+    #[test]
+    fn test_builder_custom_fields() {
+        let result = RedbExpiringBloomFilterOptionsBuilder::default()
+            .path("filter_tests.redb".into())
+            .capacity(1000)
+            .expiration_time(Duration::from_secs(3600))
+            .false_positive_rate(0.001)
+            .max_levels(10)
+            .build();
+
+        assert!(result.is_ok());
+        let opts = result.unwrap();
+        assert_eq!(opts.false_positive_rate, 0.001);
+        assert_eq!(opts.max_levels, 10);
+    }
+
+    #[test]
+    fn test_builder_missing_required() {
+        // Test missing path
+        let result = RedbExpiringBloomFilterOptionsBuilder::default()
+            .capacity(1000)
+            .expiration_time(Duration::from_secs(3600))
+            .build();
+        assert!(result.is_err());
+
+        // Test missing capacity
+        let result = RedbExpiringBloomFilterOptionsBuilder::default()
+            .path("filter_tests.redb".into())
+            .expiration_time(Duration::from_secs(3600))
+            .build();
+        assert!(result.is_err());
     }
 }
