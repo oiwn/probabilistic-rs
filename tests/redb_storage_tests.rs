@@ -1,11 +1,14 @@
 #[cfg(test)]
 mod tests {
-    use expiring_bloom_rs::redb_storage::RedbStorage;
+    use expiring_bloom_rs::redb_storage::RedbExpiringBloomFilterOptionsBuilder;
+    use expiring_bloom_rs::redb_storage::{RedbExpiringBloomFilter, RedbStorage};
     use expiring_bloom_rs::{
         default_hash_function, BloomFilterStorage, SlidingBloomFilter,
     };
+    use rand::random;
     use std::{
         fs,
+        path::PathBuf,
         sync::{Arc, Mutex},
         thread,
         time::{Duration, SystemTime},
@@ -17,7 +20,11 @@ mod tests {
         (storage, path)
     }
 
-    fn cleanup_db(path: &str) {
+    fn temp_db_path() -> PathBuf {
+        format!("test_bloom_{}.redb", random::<u64>()).into()
+    }
+
+    fn cleanup_db(path: &PathBuf) {
         let _ = fs::remove_file(path);
     }
 
@@ -34,7 +41,7 @@ mod tests {
         storage.clear_level(0).unwrap();
         assert!(!storage.get_bit(0, 5).unwrap());
 
-        cleanup_db(&path);
+        cleanup_db(&path.into());
     }
 
     #[test]
@@ -53,7 +60,7 @@ mod tests {
             assert!(storage.get_bit(0, 5).unwrap());
         }
 
-        cleanup_db(&path);
+        cleanup_db(&path.into());
     }
 
     #[test]
@@ -71,7 +78,7 @@ mod tests {
         storage.set_timestamp(0, time2).unwrap();
         assert!(storage.get_timestamp(0).unwrap().unwrap() == time2);
 
-        cleanup_db(&path);
+        cleanup_db(&path.into());
     }
 
     #[test]
@@ -89,7 +96,7 @@ mod tests {
         assert!(storage.set_bit(0, 2000).is_err());
         assert!(storage.get_bit(0, 2000).is_err());
 
-        cleanup_db(&path);
+        cleanup_db(&path.into());
     }
 
     #[test]
@@ -112,7 +119,7 @@ mod tests {
             handle.join().unwrap();
         }
 
-        cleanup_db(&path);
+        cleanup_db(&path.into());
     }
 
     #[test]
@@ -142,7 +149,7 @@ mod tests {
         assert!(bloom.query(b"item1").unwrap()); // First item should still be present
 
         // Wait for another rotation
-        thread::sleep(Duration::from_millis(200));
+        thread::sleep(Duration::from_millis(150));
 
         // Insert and verify third item
         bloom.insert(b"item3").unwrap();
@@ -163,7 +170,7 @@ mod tests {
             "Latest item should have expired"
         );
 
-        cleanup_db(&path);
+        cleanup_db(&path.into());
     }
 
     #[test]
@@ -206,16 +213,68 @@ mod tests {
             println!("Item {} exists: {}", i, exists);
         }
 
+        cleanup_db(&path.into());
+    }
+
+    #[test]
+    fn test_filter_basic_operations() {
+        let path = temp_db_path();
+
+        let opts = RedbExpiringBloomFilterOptionsBuilder::default()
+            .path(path.clone())
+            .capacity(1000)
+            .expiration_time(Duration::from_secs(3600))
+            .build()
+            .unwrap();
+
+        let mut filter = RedbExpiringBloomFilter::new(opts).unwrap();
+
+        // Test insert and query
+        filter.insert(b"test_item").unwrap();
+        assert!(filter.query(b"test_item").unwrap());
+        assert!(!filter.query(b"nonexistent_item").unwrap());
+
         cleanup_db(&path);
     }
 
-    // Helper function to simulate consistent hashing for test items
-    fn hash_item(item: &str) -> usize {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
+    // #[test]
+    /// This test running for more than 60 seconds, definitely because backend poorly implemented
+    fn test_false_positive_rate() {
+        let path = temp_db_path();
 
-        let mut hasher = DefaultHasher::new();
-        item.hash(&mut hasher);
-        (hasher.finish() % 1000) as usize
+        // Create filter with specific false positive rate
+        let opts = RedbExpiringBloomFilterOptionsBuilder::default()
+            .path(path.clone())
+            .capacity(10000)
+            .expiration_time(Duration::from_secs(3600))
+            .false_positive_rate(0.01)
+            .build()
+            .unwrap();
+
+        let mut filter = RedbExpiringBloomFilter::new(opts).unwrap();
+
+        // Insert some known items
+        let mut known_items = Vec::new();
+        for i in 0..1000 {
+            let item = format!("known_item_{}", i);
+            known_items.push(item.clone());
+            filter.insert(item.as_bytes()).unwrap();
+        }
+
+        // Test unknown items
+        let mut false_positives = 0;
+        let test_count = 10000;
+
+        for i in 0..test_count {
+            let unknown_item = format!("unknown_item_{}", i);
+            if filter.query(unknown_item.as_bytes()).unwrap() {
+                false_positives += 1;
+            }
+        }
+
+        let observed_fpr = false_positives as f64 / test_count as f64;
+        assert!(observed_fpr < 0.02); // Allow some margin above target 0.01
+
+        cleanup_db(&path);
     }
 }

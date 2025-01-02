@@ -270,3 +270,56 @@ impl BloomFilterStorage for RedbStorage {
         self.max_levels
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_builder_required_fields() {
+        // Test builder with only required fields
+        let result = RedbExpiringBloomFilterOptionsBuilder::default()
+            .path("filter_tests.redb".into())
+            .capacity(1000)
+            .expiration_time(Duration::from_secs(3600))
+            .build();
+
+        assert!(result.is_ok());
+        let opts = result.unwrap();
+        assert_eq!(opts.false_positive_rate, 0.01); // Check default value
+        assert_eq!(opts.max_levels, 5); // Check default value
+    }
+
+    #[test]
+    fn test_builder_custom_fields() {
+        let result = RedbExpiringBloomFilterOptionsBuilder::default()
+            .path("filter_tests.redb".into())
+            .capacity(1000)
+            .expiration_time(Duration::from_secs(3600))
+            .false_positive_rate(0.001)
+            .max_levels(10)
+            .build();
+
+        assert!(result.is_ok());
+        let opts = result.unwrap();
+        assert_eq!(opts.false_positive_rate, 0.001);
+        assert_eq!(opts.max_levels, 10);
+    }
+
+    #[test]
+    fn test_builder_missing_required() {
+        // Test missing path
+        let result = RedbExpiringBloomFilterOptionsBuilder::default()
+            .capacity(1000)
+            .expiration_time(Duration::from_secs(3600))
+            .build();
+        assert!(result.is_err());
+
+        // Test missing capacity
+        let result = RedbExpiringBloomFilterOptionsBuilder::default()
+            .path("filter_tests.redb".into())
+            .expiration_time(Duration::from_secs(3600))
+            .build();
+        assert!(result.is_err());
+    }
+}
