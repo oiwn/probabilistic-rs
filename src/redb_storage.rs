@@ -19,6 +19,9 @@ pub struct RedbStorage {
     max_levels: usize,
 }
 
+// TODO: create builder to create SlidingBloomFilter with storage at once, i.e.
+// API to create RedbExpiringBloomFilter
+
 impl RedbStorage {
     pub fn open(path: &str, capacity: usize, max_levels: usize) -> Result<Self> {
         // Open or create the database

@@ -30,4 +30,7 @@ pub mod redb_storage;
 #[cfg(feature = "redis")]
 pub mod redis_storage;
 
-pub use crate::expiring_bloom::{BloomError, BloomFilterStorage, Result};
+pub use crate::expiring_bloom::{
+    default_hash_function, BloomError, BloomFilterStorage, Result,
+    SlidingBloomFilter,
+};

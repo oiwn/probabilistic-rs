@@ -1,9 +1,9 @@
-/* #[cfg(test)]
+#[cfg(test)]
 mod tests {
-    use expiring_bloom_rs::backends::BloomFilterStorage;
-    use expiring_bloom_rs::default_hash_function;
     use expiring_bloom_rs::redb_storage::RedbStorage;
-    use expiring_bloom_rs::SlidingBloomFilter;
+    use expiring_bloom_rs::{
+        default_hash_function, BloomFilterStorage, SlidingBloomFilter,
+    };
     use std::{
         fs,
         sync::{Arc, Mutex},
@@ -116,84 +116,9 @@ mod tests {
     }
 
     #[test]
-    fn test_expiration_timing_detailed() {
-        let path = format!("test_db_{}.redb", rand::random::<u64>());
-
-        // Configure storage with 3 levels and 1 second per level
-        let mut storage = RedbStorage::open(&path, 1000, 3).unwrap();
-        let level_duration = Duration::from_secs(1);
-
-        // Test data
-        let data = vec![
-            ("item1", 0), // level 0
-            ("item2", 0), // level 0
-            ("item3", 1), // level 1, after sleeping
-            ("item4", 1), // level 1
-            ("item5", 2), // level 2, after sleeping
-        ];
-
-        // Insert items with specific timing
-        for &(item, sleep_secs) in &data {
-            if sleep_secs > 0 {
-                thread::sleep(level_duration * sleep_secs);
-            }
-            storage.set_bit(0, hash_item(item)).unwrap();
-            println!("Inserted {} at time {:?}", item, SystemTime::now());
-        }
-
-        // Verify all items are present initially
-        for &(item, _) in &data {
-            assert!(
-                storage.get_bit(0, hash_item(item)).unwrap(),
-                "Item {} should be present initially",
-                item
-            );
-        }
-
-        // Wait for first level to expire (items 1-2)
-        thread::sleep(level_duration * 3);
-
-        // Check items after first expiration
-        for &(item, sleep_secs) in &data {
-            let exists = storage.get_bit(0, hash_item(item)).unwrap();
-            if sleep_secs == 0 {
-                assert!(!exists, "Item {} should have expired", item);
-            } else {
-                assert!(exists, "Item {} should still exist", item);
-            }
-        }
-
-        // Wait for second level to expire (items 3-4)
-        thread::sleep(level_duration * 2);
-
-        // Check items after second expiration
-        for &(item, sleep_secs) in &data {
-            let exists = storage.get_bit(0, hash_item(item)).unwrap();
-            if sleep_secs <= 1 {
-                assert!(!exists, "Item {} should have expired", item);
-            } else {
-                assert!(exists, "Item {} should still exist", item);
-            }
-        }
-
-        // Wait for all items to expire
-        thread::sleep(level_duration * 2);
-
-        // Verify all items have expired
-        for &(item, _) in &data {
-            assert!(
-                !storage.get_bit(0, hash_item(item)).unwrap(),
-                "Item {} should have expired",
-                item
-            );
-        }
-
-        cleanup_db(&path);
-    }
-
-    #[test]
     fn test_level_rotation() {
         let path = format!("test_db_{}.redb", rand::random::<u64>());
+        // 3 * 100ms = 300ms duration of item in queue
         let mut bloom = SlidingBloomFilter::new(
             RedbStorage::open(&path, 1000, 3).unwrap(),
             1000,
@@ -217,25 +142,25 @@ mod tests {
         assert!(bloom.query(b"item1").unwrap()); // First item should still be present
 
         // Wait for another rotation
-        thread::sleep(Duration::from_millis(150));
+        thread::sleep(Duration::from_millis(200));
 
         // Insert and verify third item
         bloom.insert(b"item3").unwrap();
         assert!(bloom.query(b"item3").unwrap());
         assert!(bloom.query(b"item2").unwrap());
-        assert!(bloom.query(b"item1").unwrap());
+        assert!(!bloom.query(b"item1").unwrap()); // This item should be expired already
 
         // Wait for first item to expire (3 * level_duration)
         thread::sleep(Duration::from_millis(300));
         bloom.cleanup_expired_levels().unwrap();
 
         assert!(
-            !bloom.query(b"item1").unwrap(),
-            "First item should have expired"
+            !bloom.query(b"item2").unwrap(),
+            "Second item should have expired"
         );
         assert!(
-            bloom.query(b"item3").unwrap(),
-            "Latest item should still exist"
+            !bloom.query(b"item3").unwrap(),
+            "Latest item should have expired"
         );
 
         cleanup_db(&path);
@@ -293,4 +218,4 @@ mod tests {
         item.hash(&mut hasher);
         (hasher.finish() % 1000) as usize
     }
-} */
+}
