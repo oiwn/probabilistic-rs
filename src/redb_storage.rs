@@ -1,4 +1,4 @@
-use crate::backends::{BloomError, BloomFilterStorage, Result};
+use crate::expiring_bloom::{BloomError, BloomFilterStorage, Result};
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -18,6 +18,9 @@ pub struct RedbStorage {
     capacity: usize,
     max_levels: usize,
 }
+
+// TODO: create builder to create SlidingBloomFilter with storage at once, i.e.
+// API to create RedbExpiringBloomFilter
 
 impl RedbStorage {
     pub fn open(path: &str, capacity: usize, max_levels: usize) -> Result<Self> {
@@ -113,12 +116,6 @@ impl RedbStorage {
 }
 
 impl BloomFilterStorage for RedbStorage {
-    fn new(_capacity: usize, _max_levels: usize) -> Result<Self> {
-        Err(BloomError::StorageError(
-            "Use RedbStorage::open() instead".to_string(),
-        ))
-    }
-
     fn set_bit(&mut self, level: usize, index: usize) -> Result<()> {
         if index >= self.capacity {
             return Err(BloomError::IndexOutOfBounds {

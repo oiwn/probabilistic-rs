@@ -7,16 +7,17 @@ pub struct InMemoryStorage {
     timestamps: Vec<SystemTime>,
     capacity: usize,
 }
-
-impl BloomFilterStorage for InMemoryStorage {
-    fn new(capacity: usize, max_levels: usize) -> Result<Self> {
+impl InMemoryStorage {
+    pub fn new(capacity: usize, max_levels: usize) -> Result<Self> {
         Ok(Self {
             levels: vec![vec![false; capacity]; max_levels],
             timestamps: vec![SystemTime::now(); max_levels],
             capacity,
         })
     }
+}
 
+impl BloomFilterStorage for InMemoryStorage {
     fn set_bit(&mut self, level: usize, index: usize) -> Result<()> {
         if index >= self.capacity {
             return Err(BloomError::IndexOutOfBounds {
