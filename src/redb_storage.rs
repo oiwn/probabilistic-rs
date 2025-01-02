@@ -115,14 +115,6 @@ impl RedbStorage {
     }
 }
 
-impl RedbStorage {
-    fn new(_capacity: usize, _max_levels: usize) -> Result<Self> {
-        Err(BloomError::StorageError(
-            "Use RedbStorage::open() instead".to_string(),
-        ))
-    }
-}
-
 impl BloomFilterStorage for RedbStorage {
     fn set_bit(&mut self, level: usize, index: usize) -> Result<()> {
         if index >= self.capacity {
