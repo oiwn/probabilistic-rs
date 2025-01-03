@@ -9,6 +9,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+/* // Table for storing bit values
+// Key: u64 (first byte for level, remaining bytes for index)
+// Value: bool (single byte)
+const BITS_TABLE: TableDefinition<u64, bool> = TableDefinition::new("bits");
+
+// Table for storing timestamps per level
+const TIMESTAMPS_TABLE: TableDefinition<u8, &[u8]> = TableDefinition::new("timestamps"); */
+
 const LEVELS_TABLE: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("levels");
 

@@ -112,7 +112,7 @@ fn optimal_num_hashes(n: usize, m: usize) -> usize {
 }
 
 pub struct SlidingBloomFilter<S: BloomFilterStorage> {
-    storage: S,
+    pub storage: S,
     hash_function: HashFunction,
     capacity: usize,
     num_hashes: usize,
