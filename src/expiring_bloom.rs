@@ -22,7 +22,7 @@ pub enum BloomError {
 
     #[cfg(feature = "redis")]
     #[error("Redis error: {0}")]
-    RedisError(#[from] rustis::Error),
+    RedisError(#[from] redis::RedisError),
 
     #[cfg(feature = "redb")]
     #[error("ReDB error: {0}")]
@@ -34,10 +34,11 @@ pub enum BloomError {
 
 // Trait for the storage backend
 pub trait BloomFilterStorage {
-    /// Sets a bit at the specified level and index
-    fn set_bit(&mut self, level: usize, index: usize) -> Result<()>;
-    /// Gets a bit value at the specified level and index
-    fn get_bit(&self, level: usize, index: usize) -> Result<bool>;
+    /// Sets multiple bits at the specified level and indices
+    fn set_bits(&mut self, level: usize, indices: &[usize]) -> Result<()>;
+    /// Gets multiple bit values at the specified level and indices
+    /// Returns a Vec of booleans corresponding to each requested index
+    fn get_bits(&self, level: usize, indices: &[usize]) -> Result<Vec<bool>>;
     /// Clears all bits in the specified level
     fn clear_level(&mut self, level: usize) -> Result<()>;
     /// Sets the timestamp for a level
@@ -113,13 +114,13 @@ fn optimal_num_hashes(n: usize, m: usize) -> usize {
 
 pub struct SlidingBloomFilter<S: BloomFilterStorage> {
     pub storage: S,
-    hash_function: HashFunction,
-    capacity: usize,
-    num_hashes: usize,
+    pub hash_function: HashFunction,
+    pub capacity: usize,
+    pub num_hashes: usize,
     false_positive_rate: f64,
     level_time: Duration,
     max_levels: usize,
-    current_level_index: usize,
+    pub current_level_index: usize,
 }
 
 impl<S: BloomFilterStorage> SlidingBloomFilter<S> {
@@ -163,7 +164,7 @@ impl<S: BloomFilterStorage> SlidingBloomFilter<S> {
         Ok(())
     }
 
-    fn should_create_new_level(&self) -> Result<bool> {
+    pub fn should_create_new_level(&self) -> Result<bool> {
         let current_level = self.current_level_index;
         if let Some(last_timestamp) = self.storage.get_timestamp(current_level)? {
             let now = SystemTime::now();
@@ -176,7 +177,7 @@ impl<S: BloomFilterStorage> SlidingBloomFilter<S> {
         }
     }
 
-    fn create_new_level(&mut self) -> Result<()> {
+    pub fn create_new_level(&mut self) -> Result<()> {
         // Advance current level index in a circular manner
         self.current_level_index =
             (self.current_level_index + 1) % self.max_levels;
@@ -192,16 +193,25 @@ impl<S: BloomFilterStorage> SlidingBloomFilter<S> {
         if self.should_create_new_level()? {
             self.create_new_level()?;
         }
-        let current_level = self.current_level_index;
-        let hashes = (self.hash_function)(item, self.num_hashes, self.capacity);
-        for &hash in &hashes {
-            self.storage.set_bit(current_level, hash as usize)?;
-        }
-        Ok(())
+
+        // Get all hash indices at once
+        let indices: Vec<usize> =
+            (self.hash_function)(item, self.num_hashes, self.capacity)
+                .into_iter()
+                .map(|h| h as usize)
+                .collect();
+
+        // Set all bits in one operation
+        self.storage.set_bits(self.current_level_index, &indices)
     }
 
     pub fn query(&self, item: &[u8]) -> Result<bool> {
-        let hashes = (self.hash_function)(item, self.num_hashes, self.capacity);
+        let indices: Vec<usize> =
+            (self.hash_function)(item, self.num_hashes, self.capacity)
+                .into_iter()
+                .map(|h| h as usize)
+                .collect();
+
         let now = SystemTime::now();
 
         for level in 0..self.max_levels {
@@ -211,15 +221,9 @@ impl<S: BloomFilterStorage> SlidingBloomFilter<S> {
                     .map_err(|e| BloomError::StorageError(e.to_string()))?;
 
                 if elapsed <= self.level_time * self.max_levels as u32 {
-                    let all_bits_set = hashes.iter().try_fold(
-                        true,
-                        |acc, &hash| -> Result<bool> {
-                            Ok(acc
-                                && self.storage.get_bit(level, hash as usize)?)
-                        },
-                    )?;
-
-                    if all_bits_set {
+                    // Check all bits in one operation
+                    let bits = self.storage.get_bits(level, &indices)?;
+                    if bits.iter().all(|&bit| bit) {
                         return Ok(true);
                     }
                 }

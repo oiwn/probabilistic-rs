@@ -4,27 +4,16 @@ use crate::expiring_bloom::{
 };
 use derive_builder::Builder;
 use redb::{Database, ReadableTable, TableDefinition};
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-/* // Table for storing bit values
-// Key: u64 (first byte for level, remaining bytes for index)
-// Value: bool (single byte)
-const BITS_TABLE: TableDefinition<u64, bool> = TableDefinition::new("bits");
+// Key: u8 (just level), Value: Vec<u8> (bit array)
+const BITS_TABLE: TableDefinition<u8, &[u8]> = TableDefinition::new("bits");
 
 // Table for storing timestamps per level
-const TIMESTAMPS_TABLE: TableDefinition<u8, &[u8]> = TableDefinition::new("timestamps"); */
-
-const LEVELS_TABLE: TableDefinition<&[u8], &[u8]> =
-    TableDefinition::new("levels");
-
-#[derive(Serialize, Deserialize)]
-struct LevelData {
-    bits: Vec<bool>,
-    timestamp: SystemTime,
-}
+const TIMESTAMPS_TABLE: TableDefinition<u8, &[u8]> =
+    TableDefinition::new("timestamps");
 
 pub struct RedbStorage {
     db: Arc<Database>,
@@ -62,13 +51,8 @@ impl RedbExpiringBloomFilter {
         );
 
         // Create ReDB storage
-        let storage = RedbStorage::open(
-            opts.path.to_str().ok_or_else(|| {
-                BloomError::StorageError("Invalid path".to_string())
-            })?,
-            opts.capacity,
-            opts.max_levels,
-        )?;
+        let storage =
+            RedbStorage::open(&opts.path, opts.capacity, opts.max_levels)?;
 
         // Create the sliding bloom filter
         let filter = SlidingBloomFilter::new(
@@ -100,39 +84,67 @@ impl RedbExpiringBloomFilter {
 }
 
 impl RedbStorage {
-    pub fn open(path: &str, capacity: usize, max_levels: usize) -> Result<Self> {
-        // Open or create the database
+    pub fn open(
+        path: &PathBuf,
+        capacity: usize,
+        max_levels: usize,
+    ) -> Result<Self> {
+        if max_levels > 255 {
+            return Err(BloomError::StorageError(
+                "Max levels cannot exceed 255".to_string(),
+            ));
+        }
+
         let db = Database::create(path)
             .map_err(|e| BloomError::StorageError(e.to_string()))?;
         let db = Arc::new(db);
 
-        // Initialize the database with empty levels if they don't exist
+        // Initialize bit arrays and timestamps for each level
         let write_txn = db
             .begin_write()
             .map_err(|e| BloomError::StorageError(e.to_string()))?;
         {
-            let mut table = write_txn
-                .open_table(LEVELS_TABLE)
+            // Initialize bit arrays
+            let mut bits_table = write_txn
+                .open_table(BITS_TABLE)
                 .map_err(|e| BloomError::StorageError(e.to_string()))?;
 
-            // Initialize each level if it doesn't exist
-            for level in 0..max_levels {
-                let level_key = level.to_le_bytes();
-                if table
-                    .get(&level_key[..])
+            // Calculate bytes needed for capacity
+            let bytes_needed = (capacity + 7) / 8; // Round up division
+            let empty_bits = vec![0u8; bytes_needed];
+
+            // Initialize timestamps
+            let mut timestamps_table = write_txn
+                .open_table(TIMESTAMPS_TABLE)
+                .map_err(|e| BloomError::StorageError(e.to_string()))?;
+
+            let now = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map_err(|e| BloomError::StorageError(e.to_string()))?;
+            let duration_bytes = bincode::serialize(&now)
+                .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+
+            // Initialize each level
+            for level in 0..max_levels as u8 {
+                // Initialize bits if not exists
+                if bits_table
+                    .get(&level)
                     .map_err(|e| BloomError::StorageError(e.to_string()))?
                     .is_none()
                 {
-                    let level_data = LevelData {
-                        bits: vec![false; capacity],
-                        timestamp: SystemTime::now(),
-                    };
-                    let serialized =
-                        bincode::serialize(&level_data).map_err(|e| {
-                            BloomError::SerializationError(e.to_string())
-                        })?;
-                    table
-                        .insert(&level_key[..], &serialized[..])
+                    bits_table
+                        .insert(&level, empty_bits.as_slice())
+                        .map_err(|e| BloomError::StorageError(e.to_string()))?;
+                }
+
+                // Initialize timestamp if not exists
+                if timestamps_table
+                    .get(&level)
+                    .map_err(|e| BloomError::StorageError(e.to_string()))?
+                    .is_none()
+                {
+                    timestamps_table
+                        .insert(&level, duration_bytes.as_slice())
                         .map_err(|e| BloomError::StorageError(e.to_string()))?;
                 }
             }
@@ -148,58 +160,92 @@ impl RedbStorage {
         })
     }
 
-    fn get_level_data(&self, level: usize) -> Result<LevelData> {
-        let read_txn = self
-            .db
-            .begin_read()
-            .map_err(|e| BloomError::StorageError(e.to_string()))?;
-        let table = read_txn
-            .open_table(LEVELS_TABLE)
-            .map_err(|e| BloomError::StorageError(e.to_string()))?;
-        let level_key = level.to_le_bytes();
-        let data = table
-            .get(&level_key[..])
-            .map_err(|e| BloomError::StorageError(e.to_string()))?
-            .ok_or_else(|| BloomError::InvalidLevel {
-                level,
-                max_levels: self.max_levels,
-            })?;
-
-        bincode::deserialize(data.value())
-            .map_err(|e| BloomError::SerializationError(e.to_string()))
+    // Helper function to calculate byte and bit position
+    #[inline]
+    fn get_byte_and_bit_pos(index: usize) -> (usize, u8) {
+        let byte_pos = index / 8;
+        let bit_pos = (index % 8) as u8;
+        (byte_pos, bit_pos)
     }
 
-    fn save_level_data(&self, level: usize, data: &LevelData) -> Result<()> {
+    // Helper to set a bit in a byte array
+    #[inline]
+    fn set_bit_in_array(bits: &mut [u8], index: usize) {
+        let (byte_pos, bit_pos) = Self::get_byte_and_bit_pos(index);
+        bits[byte_pos] |= 1 << bit_pos;
+    }
+
+    // Helper to get a bit from a byte array
+    #[inline]
+    fn get_bit_from_array(bits: &[u8], index: usize) -> bool {
+        let (byte_pos, bit_pos) = Self::get_byte_and_bit_pos(index);
+        (bits[byte_pos] & (1 << bit_pos)) != 0
+    }
+}
+
+impl BloomFilterStorage for RedbStorage {
+    fn set_bits(&mut self, level: usize, indices: &[usize]) -> Result<()> {
+        if level >= self.max_levels {
+            return Err(BloomError::InvalidLevel {
+                level,
+                max_levels: self.max_levels,
+            });
+        }
+
+        // Check indices
+        if let Some(&max_index) = indices.iter().max() {
+            if max_index >= self.capacity {
+                return Err(BloomError::IndexOutOfBounds {
+                    index: max_index,
+                    capacity: self.capacity,
+                });
+            }
+        }
+
         let write_txn = self
             .db
             .begin_write()
             .map_err(|e| BloomError::StorageError(e.to_string()))?;
         {
             let mut table = write_txn
-                .open_table(LEVELS_TABLE)
+                .open_table(BITS_TABLE)
                 .map_err(|e| BloomError::StorageError(e.to_string()))?;
-            let level_key = level.to_le_bytes();
-            let serialized = bincode::serialize(data)
-                .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+
+            // Get current bits in a new scope
+            let bits = {
+                let current_bits = table
+                    .get(&(level as u8))
+                    .map_err(|e| BloomError::StorageError(e.to_string()))?
+                    .ok_or_else(|| {
+                        BloomError::StorageError(
+                            "Bit array not initialized".to_string(),
+                        )
+                    })?;
+
+                // Create mutable copy of the bits
+                let mut bits = current_bits.value().to_vec();
+
+                // Set all required bits
+                for &index in indices {
+                    Self::set_bit_in_array(&mut bits, index);
+                }
+
+                bits
+            }; // AccessGuard is dropped here
+
+            // Now we can insert the modified bits
             table
-                .insert(&level_key[..], &serialized[..])
+                .insert(&(level as u8), bits.as_slice())
                 .map_err(|e| BloomError::StorageError(e.to_string()))?;
         }
         write_txn
             .commit()
             .map_err(|e| BloomError::StorageError(e.to_string()))?;
+
         Ok(())
     }
-}
 
-impl BloomFilterStorage for RedbStorage {
-    fn set_bit(&mut self, level: usize, index: usize) -> Result<()> {
-        if index >= self.capacity {
-            return Err(BloomError::IndexOutOfBounds {
-                index,
-                capacity: self.capacity,
-            });
-        }
+    fn get_bits(&self, level: usize, indices: &[usize]) -> Result<Vec<bool>> {
         if level >= self.max_levels {
             return Err(BloomError::InvalidLevel {
                 level,
@@ -207,28 +253,36 @@ impl BloomFilterStorage for RedbStorage {
             });
         }
 
-        let mut level_data = self.get_level_data(level)?;
-        level_data.bits[index] = true;
-        self.save_level_data(level, &level_data)
-    }
-
-    #[inline]
-    fn get_bit(&self, level: usize, index: usize) -> Result<bool> {
-        if index >= self.capacity {
-            return Err(BloomError::IndexOutOfBounds {
-                index,
-                capacity: self.capacity,
-            });
-        }
-        if level >= self.max_levels {
-            return Err(BloomError::InvalidLevel {
-                level,
-                max_levels: self.max_levels,
-            });
+        // Check indices
+        if let Some(&max_index) = indices.iter().max() {
+            if max_index >= self.capacity {
+                return Err(BloomError::IndexOutOfBounds {
+                    index: max_index,
+                    capacity: self.capacity,
+                });
+            }
         }
 
-        let level_data = self.get_level_data(level)?;
-        Ok(level_data.bits[index])
+        let read_txn = self
+            .db
+            .begin_read()
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+        let table = read_txn
+            .open_table(BITS_TABLE)
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+
+        let bits = table
+            .get(&(level as u8))
+            .map_err(|e| BloomError::StorageError(e.to_string()))?
+            .ok_or_else(|| {
+                BloomError::StorageError("Bit array not initialized".to_string())
+            })?;
+
+        // Get all requested bits
+        Ok(indices
+            .iter()
+            .map(|&index| Self::get_bit_from_array(bits.value(), index))
+            .collect())
     }
 
     fn clear_level(&mut self, level: usize) -> Result<()> {
@@ -239,10 +293,29 @@ impl BloomFilterStorage for RedbStorage {
             });
         }
 
-        let mut level_data = self.get_level_data(level)?;
-        level_data.bits = vec![false; self.capacity];
-        level_data.timestamp = SystemTime::now();
-        self.save_level_data(level, &level_data)
+        let write_txn = self
+            .db
+            .begin_write()
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+        {
+            let mut table = write_txn
+                .open_table(BITS_TABLE)
+                .map_err(|e| BloomError::StorageError(e.to_string()))?;
+
+            // Create empty bit array
+            let bytes_needed = (self.capacity + 7) / 8;
+            let empty_bits = vec![0u8; bytes_needed];
+
+            // Reset level to empty bits
+            table
+                .insert(&(level as u8), empty_bits.as_slice())
+                .map_err(|e| BloomError::StorageError(e.to_string()))?;
+        }
+        write_txn
+            .commit()
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+
+        Ok(())
     }
 
     fn set_timestamp(
@@ -257,9 +330,33 @@ impl BloomFilterStorage for RedbStorage {
             });
         }
 
-        let mut level_data = self.get_level_data(level)?;
-        level_data.timestamp = timestamp;
-        self.save_level_data(level, &level_data)
+        let write_txn = self
+            .db
+            .begin_write()
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+        {
+            let mut table = write_txn
+                .open_table(TIMESTAMPS_TABLE)
+                .map_err(|e| BloomError::StorageError(e.to_string()))?;
+
+            // Get duration since UNIX_EPOCH
+            let duration = timestamp
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map_err(|e| BloomError::StorageError(e.to_string()))?;
+
+            // Store full duration bytes
+            let duration_bytes = bincode::serialize(&duration)
+                .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+
+            table
+                .insert(&(level as u8), duration_bytes.as_slice())
+                .map_err(|e| BloomError::StorageError(e.to_string()))?;
+        }
+        write_txn
+            .commit()
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+
+        Ok(())
     }
 
     fn get_timestamp(&self, level: usize) -> Result<Option<SystemTime>> {
@@ -270,8 +367,26 @@ impl BloomFilterStorage for RedbStorage {
             });
         }
 
-        let level_data = self.get_level_data(level)?;
-        Ok(Some(level_data.timestamp))
+        let read_txn = self
+            .db
+            .begin_read()
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+        let table = read_txn
+            .open_table(TIMESTAMPS_TABLE)
+            .map_err(|e| BloomError::StorageError(e.to_string()))?;
+
+        if let Some(bytes) = table
+            .get(&(level as u8))
+            .map_err(|e| BloomError::StorageError(e.to_string()))?
+        {
+            // Deserialize duration and convert back to SystemTime
+            let duration: Duration = bincode::deserialize(bytes.value())
+                .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+
+            Ok(Some(SystemTime::UNIX_EPOCH + duration))
+        } else {
+            Ok(None)
+        }
     }
 
     fn num_levels(&self) -> usize {

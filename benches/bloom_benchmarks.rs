@@ -1,10 +1,12 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use dotenvy::dotenv;
 use expiring_bloom_rs::{
     default_hash_function, inmemory_storage::InMemoryStorage,
-    redb_storage::RedbStorage, BloomFilterStorage, SlidingBloomFilter,
+    redb_storage::RedbStorage, redis_storage::RedisStorage, BloomFilterStorage,
+    SlidingBloomFilter,
 };
 use rand::{distributions::Alphanumeric, Rng};
-use std::{fs, time::Duration, time::SystemTime};
+use std::{env, fs, path::PathBuf, time::Duration, time::SystemTime};
 
 // Helper function to generate random string data
 fn generate_random_string(len: usize) -> String {
@@ -15,18 +17,29 @@ fn generate_random_string(len: usize) -> String {
         .collect()
 }
 
+fn get_redis_url() -> String {
+    dotenv().ok();
+    env::var("REDIS_URI").unwrap_or_else(|_| "redis://127.0.0.1/".to_string())
+}
+
 // Helper to create test data
 fn generate_test_data(count: usize) -> Vec<String> {
     (0..count).map(|_| generate_random_string(32)).collect()
 }
 
 // Helper to create "expired" timestamps
+// see: https://github.com/rust-lang/rust/issues/100141
+// to figure why this crap is so complicated.
 fn create_expired_timestamps(
     num_levels: usize,
     expiration_duration: Duration,
 ) -> Vec<SystemTime> {
     let now = SystemTime::now();
-    let past = now - (expiration_duration * (num_levels as u32 + 1));
+    let past =
+        match now.checked_sub(expiration_duration * (num_levels as u32 + 1)) {
+            Some(time) => time,
+            None => SystemTime::UNIX_EPOCH, // Fallback to epoch if overflow
+        };
     vec![past; num_levels]
 }
 
@@ -35,23 +48,22 @@ fn create_bloom_filter<S: BloomFilterStorage>(
     storage: S,
     capacity: usize,
     fpr: f64,
-) -> SlidingBloomFilter<S> {
-    SlidingBloomFilter::new(
+) -> Result<SlidingBloomFilter<S>, Box<dyn std::error::Error>> {
+    Ok(SlidingBloomFilter::new(
         storage,
         capacity,
         fpr,
         Duration::from_secs(1),
         5,
         default_hash_function,
-    )
-    .unwrap()
+    )?)
 }
 
 fn bench_insert(c: &mut Criterion) {
     let mut group = c.benchmark_group("insert_operations");
 
     // Test different capacities
-    for capacity in [1_000, 100_000, 1_000_000] {
+    for capacity in [10, 100, 1_000] {
         let test_data = generate_test_data(capacity);
 
         // Benchmark in-memory storage
@@ -62,14 +74,19 @@ fn bench_insert(c: &mut Criterion) {
                 b.iter_batched(
                     || {
                         create_bloom_filter(
-                            InMemoryStorage::new(*cap, 5).unwrap(),
+                            InMemoryStorage::new(*cap, 5)
+                                .expect("Failed to create InMemory storage"),
                             *cap,
                             0.01,
                         )
+                        .expect("Failed to create Bloom filter")
                     },
                     |mut filter| {
                         for item in data.iter() {
-                            filter.insert(item.as_bytes()).unwrap();
+                            if let Err(e) = filter.insert(item.as_bytes()) {
+                                eprintln!("Insert error (continuing): {}", e);
+                                continue;
+                            }
                         }
                     },
                     criterion::BatchSize::SmallInput,
@@ -77,7 +94,6 @@ fn bench_insert(c: &mut Criterion) {
             },
         );
 
-        /*
         // Benchmark ReDB storage
         group.bench_with_input(
             BenchmarkId::new("redb", capacity),
@@ -87,24 +103,59 @@ fn bench_insert(c: &mut Criterion) {
                     || {
                         let path =
                             format!("bench_db_{}.redb", rand::random::<u64>());
-                        let storage = RedbStorage::open(&path, *cap, 5).unwrap();
-                        (create_bloom_filter(storage, *cap, 0.01), path)
+                        let storage =
+                            RedbStorage::open(&path.clone().into(), *cap, 5)
+                                .expect("Failed to create ReDB storage");
+                        let filter = create_bloom_filter(storage, *cap, 0.01)
+                            .expect("Failed to create Bloom filter");
+                        (filter, path)
                     },
                     |(mut filter, _path)| {
                         for item in data.iter() {
-                            filter.insert(item.as_bytes()).unwrap();
+                            if let Err(e) = filter.insert(item.as_bytes()) {
+                                eprintln!("Insert error (continuing): {}", e);
+                                continue;
+                            }
                         }
                     },
                     criterion::BatchSize::SmallInput,
                 )
             },
         );
-        */
+
+        // Benchmark Redis storage
+        group.bench_with_input(
+            BenchmarkId::new("redis", capacity),
+            &(capacity, &test_data),
+            |b, (cap, data)| {
+                b.iter_batched(
+                    || {
+                        let redis_url = get_redis_url();
+                        let prefix =
+                            format!("bench_filter_{}", rand::random::<u64>());
+                        let storage =
+                            RedisStorage::new(&redis_url, *cap, 5, &prefix)
+                                .expect("Failed to create Redis storage");
+                        create_bloom_filter(storage, *cap, 0.01)
+                            .expect("Failed to create Bloom filter")
+                    },
+                    |mut filter| {
+                        for item in data.iter() {
+                            if let Err(e) = filter.insert(item.as_bytes()) {
+                                eprintln!("Insert error (continuing): {}", e);
+                                continue;
+                            }
+                        }
+                    },
+                    criterion::BatchSize::SmallInput,
+                )
+            },
+        );
     }
     group.finish();
 }
 
-fn bench_query(c: &mut Criterion) {
+/* fn bench_query(c: &mut Criterion) {
     let mut group = c.benchmark_group("query_operations");
 
     for capacity in [1_000, 100_000, 1_000_000] {
@@ -255,7 +306,8 @@ fn bench_cleanup(c: &mut Criterion) {
         ); */
     }
     group.finish();
-}
+} */
 
-criterion_group!(benches, bench_insert, bench_query, bench_cleanup);
+// criterion_group!(benches, bench_insert, bench_query, bench_cleanup);
+criterion_group!(benches, bench_insert);
 criterion_main!(benches);

@@ -15,14 +15,16 @@ async-trait = { version = "0.1", optional = true }
 rustis = { version = "0.13", features = ["tokio-runtime"], optional = true }
 tokio = { version = "1.42", features = ["full"], optional = true }
 derive_builder = "0.20"
+redis = { version = "0.27", optional = true }
+dotenvy = "0.15"
 
 [dev-dependencies]
 rand = "0.8"
-expiring-bloom-rs = { path = ".", features = ["redb"] }
+expiring-bloom-rs = { path = ".", features = ["redb", "redis"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [features]
-redis = ["dep:rustis", "dep:tokio", "dep:async-trait"]
+redis = ["dep:redis"]
 redb = ["dep:redb"]
 
 [[bench]]
