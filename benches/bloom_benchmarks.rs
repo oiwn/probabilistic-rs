@@ -2,8 +2,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use dotenvy::dotenv;
 use expiring_bloom_rs::{
     default_hash_function, inmemory_storage::InMemoryStorage,
-    redb_storage::RedbStorage, redis_storage::RedisStorage, BloomFilterStorage,
-    SlidingBloomFilter,
+    redb_storage::RedbStorage, BloomFilterStorage, SlidingBloomFilter,
 };
 use rand::{distributions::Alphanumeric, Rng};
 use std::{env, fs, path::PathBuf, time::Duration, time::SystemTime};
@@ -63,7 +62,7 @@ fn bench_insert(c: &mut Criterion) {
     let mut group = c.benchmark_group("insert_operations");
 
     // Test different capacities
-    for capacity in [10, 100, 1_000] {
+    for capacity in [1000, 100_000, 1_000_000] {
         let test_data = generate_test_data(capacity);
 
         // Benchmark in-memory storage
@@ -94,7 +93,7 @@ fn bench_insert(c: &mut Criterion) {
             },
         );
 
-        // Benchmark ReDB storage
+        /* // Benchmark ReDB storage
         group.bench_with_input(
             BenchmarkId::new("redb", capacity),
             &(capacity, &test_data),
@@ -121,8 +120,9 @@ fn bench_insert(c: &mut Criterion) {
                     criterion::BatchSize::SmallInput,
                 )
             },
-        );
+        ); */
 
+        /*
         // Benchmark Redis storage
         group.bench_with_input(
             BenchmarkId::new("redis", capacity),
@@ -151,11 +151,12 @@ fn bench_insert(c: &mut Criterion) {
                 )
             },
         );
+        */
     }
     group.finish();
 }
 
-/* fn bench_query(c: &mut Criterion) {
+fn bench_query(c: &mut Criterion) {
     let mut group = c.benchmark_group("query_operations");
 
     for capacity in [1_000, 100_000, 1_000_000] {
@@ -172,7 +173,8 @@ fn bench_insert(c: &mut Criterion) {
                     InMemoryStorage::new(*cap, 5).unwrap(),
                     *cap,
                     0.01,
-                );
+                )
+                .unwrap();
 
                 // Insert known data
                 for item in known.iter() {
@@ -306,7 +308,7 @@ fn bench_cleanup(c: &mut Criterion) {
         ); */
     }
     group.finish();
-} */
+}
 
 // criterion_group!(benches, bench_insert, bench_query, bench_cleanup);
 criterion_group!(benches, bench_insert);

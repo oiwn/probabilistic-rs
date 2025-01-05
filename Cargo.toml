@@ -20,7 +20,7 @@ dotenvy = "0.15"
 
 [dev-dependencies]
 rand = "0.8"
-expiring-bloom-rs = { path = ".", features = ["redb", "redis"] }
+expiring-bloom-rs = { path = ".", features = ["redb"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [features]

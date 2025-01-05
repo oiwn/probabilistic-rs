@@ -4,9 +4,10 @@ use std::time::SystemTime;
 // In-memory storage implementation
 pub struct InMemoryStorage {
     pub levels: Vec<Vec<bool>>,
-    timestamps: Vec<SystemTime>,
-    capacity: usize,
+    pub timestamps: Vec<SystemTime>,
+    pub capacity: usize,
 }
+
 impl InMemoryStorage {
     pub fn new(capacity: usize, max_levels: usize) -> Result<Self> {
         Ok(Self {

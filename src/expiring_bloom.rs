@@ -2,7 +2,7 @@ use fnv::FnvHasher;
 use murmur3::murmur3_32;
 use std::hash::Hasher;
 use std::io::Cursor;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, SystemTimeError};
 use thiserror::Error;
 
 pub use crate::inmemory_storage::InMemoryStorage;
@@ -20,6 +20,13 @@ pub enum BloomError {
     #[error("Invalid level: {level} >= {max_levels}")]
     InvalidLevel { level: usize, max_levels: usize },
 
+    #[error("SystemTime error: {0}")]
+    SystemTimeError(#[from] SystemTimeError),
+
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
+
+    #[error]
     #[cfg(feature = "redis")]
     #[error("Redis error: {0}")]
     RedisError(#[from] redis::RedisError),
@@ -27,9 +34,27 @@ pub enum BloomError {
     #[cfg(feature = "redb")]
     #[error("ReDB error: {0}")]
     RedbError(#[from] redb::Error),
+    /*
+    #[cfg(feature = "redb")]
+    #[error("ReDB database error: {0}")]
+    RedbDatabaseError(#[from] redb::DatabaseError),
 
-    #[error("Serialization error: {0}")]
-    SerializationError(String),
+    #[cfg(feature = "redb")]
+    #[error("ReDB database error: {0}")]
+    RedbTableError(#[from] redb::TableError),
+
+    #[cfg(feature = "redb")]
+    #[error("ReDB storage error: {0}")]
+    RedbStorageError(#[from] redb::StorageError),
+
+    #[cfg(feature = "redb")]
+    #[error("ReDB commit error: {0}")]
+    RedbCommitError(#[from] redb::CommitError),
+
+    #[cfg(feature = "redb")]
+    #[error("ReDB transaction error: {0}")]
+    RedbTransactionError(#[from] redb::TransactionError),
+    */
 }
 
 // Trait for the storage backend
