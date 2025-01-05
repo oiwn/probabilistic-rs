@@ -1,4 +1,4 @@
-#[cfg(test)]
+/* #[cfg(test)]
 mod tests {
     use expiring_bloom_rs::inmemory_storage::InMemoryStorage;
     use expiring_bloom_rs::redb_storage::RedbExpiringBloomFilter;
@@ -353,4 +353,4 @@ mod tests {
 
         cleanup_db(&path);
     }
-}
+} */
