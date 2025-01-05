@@ -2,7 +2,7 @@ use fnv::FnvHasher;
 use murmur3::murmur3_32;
 use std::hash::Hasher;
 use std::io::Cursor;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, SystemTimeError};
 use thiserror::Error;
 
 pub use crate::inmemory_storage::InMemoryStorage;
@@ -20,16 +20,15 @@ pub enum BloomError {
     #[error("Invalid level: {level} >= {max_levels}")]
     InvalidLevel { level: usize, max_levels: usize },
 
-    #[cfg(feature = "redis")]
-    #[error("Redis error: {0}")]
-    RedisError(#[from] redis::RedisError),
+    #[error("SystemTime error: {0}")]
+    SystemTimeError(#[from] SystemTimeError),
+
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
 
     #[cfg(feature = "redb")]
     #[error("ReDB error: {0}")]
     RedbError(#[from] redb::Error),
-
-    #[error("Serialization error: {0}")]
-    SerializationError(String),
 }
 
 // Trait for the storage backend
@@ -103,12 +102,12 @@ pub fn default_hash_function(
         .collect()
 }
 
-fn optimal_bit_vector_size(n: usize, fpr: f64) -> usize {
+pub fn optimal_bit_vector_size(n: usize, fpr: f64) -> usize {
     let ln2 = std::f64::consts::LN_2;
     ((-(n as f64) * fpr.ln()) / (ln2 * ln2)).ceil() as usize
 }
 
-fn optimal_num_hashes(n: usize, m: usize) -> usize {
+pub fn optimal_num_hashes(n: usize, m: usize) -> usize {
     ((m as f64 / n as f64) * std::f64::consts::LN_2).round() as usize
 }
 
