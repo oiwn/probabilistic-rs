@@ -26,35 +26,9 @@ pub enum BloomError {
     #[error("Serialization error: {0}")]
     SerializationError(String),
 
-    #[error]
-    #[cfg(feature = "redis")]
-    #[error("Redis error: {0}")]
-    RedisError(#[from] redis::RedisError),
-
     #[cfg(feature = "redb")]
     #[error("ReDB error: {0}")]
     RedbError(#[from] redb::Error),
-    /*
-    #[cfg(feature = "redb")]
-    #[error("ReDB database error: {0}")]
-    RedbDatabaseError(#[from] redb::DatabaseError),
-
-    #[cfg(feature = "redb")]
-    #[error("ReDB database error: {0}")]
-    RedbTableError(#[from] redb::TableError),
-
-    #[cfg(feature = "redb")]
-    #[error("ReDB storage error: {0}")]
-    RedbStorageError(#[from] redb::StorageError),
-
-    #[cfg(feature = "redb")]
-    #[error("ReDB commit error: {0}")]
-    RedbCommitError(#[from] redb::CommitError),
-
-    #[cfg(feature = "redb")]
-    #[error("ReDB transaction error: {0}")]
-    RedbTransactionError(#[from] redb::TransactionError),
-    */
 }
 
 // Trait for the storage backend
@@ -128,12 +102,12 @@ pub fn default_hash_function(
         .collect()
 }
 
-fn optimal_bit_vector_size(n: usize, fpr: f64) -> usize {
+pub fn optimal_bit_vector_size(n: usize, fpr: f64) -> usize {
     let ln2 = std::f64::consts::LN_2;
     ((-(n as f64) * fpr.ln()) / (ln2 * ln2)).ceil() as usize
 }
 
-fn optimal_num_hashes(n: usize, m: usize) -> usize {
+pub fn optimal_num_hashes(n: usize, m: usize) -> usize {
     ((m as f64 / n as f64) * std::f64::consts::LN_2).round() as usize
 }
 
