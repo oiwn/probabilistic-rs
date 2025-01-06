@@ -42,10 +42,6 @@ pub use filter::{
 };
 pub use hash::{default_hash_function, HashFunction};
 pub use inmemory_filter::InMemorySlidingBloomFilter;
+#[cfg(feature = "redb")]
 pub use redb_filter::RedbSlidingBloomFilter;
 pub use storage::{BloomStorage, InMemoryStorage};
-
-// pub use crate::expiring_bloom::{
-//     default_hash_function, BloomError, BloomFilterStorage, Result,
-//     SlidingBloomFilter,
-// };

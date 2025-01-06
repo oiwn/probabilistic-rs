@@ -9,13 +9,8 @@ bitvec = "1"
 fnv = "1"
 murmur3 = "0.5"
 thiserror = "2"
-serde = { version = "1", features = ["derive"] }
 redb = { version = "2", optional = true }
-async-trait = { version = "0.1", optional = true }
-rustis = { version = "0.13", features = ["tokio-runtime"], optional = true }
-tokio = { version = "1.42", features = ["full"], optional = true }
 derive_builder = "0.20"
-redis = { version = "0.27", optional = true }
 dotenvy = "0.15"
 
 [dev-dependencies]
@@ -24,7 +19,6 @@ expiring-bloom-rs = { path = ".", features = ["redb"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [features]
-redis = ["dep:redis"]
 redb = ["dep:redb"]
 
 [[bench]]
