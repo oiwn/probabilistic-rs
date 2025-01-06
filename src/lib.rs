@@ -27,6 +27,8 @@
 //!       access during sub-filter rotation.
 //!     * Since 32 bit hashes used, max capacity would be 2**32-1 (Not sure)
 
+#[cfg(feature = "server")]
+pub mod api;
 mod error;
 mod filter;
 mod hash;
@@ -34,6 +36,8 @@ mod inmemory_filter;
 #[cfg(feature = "redb")]
 mod redb_filter;
 mod storage;
+#[cfg(feature = "server")]
+pub mod types;
 
 pub use error::{BloomError, Result};
 pub use filter::{

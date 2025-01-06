@@ -13,13 +13,27 @@ redb = { version = "2", optional = true }
 derive_builder = "0.20"
 dotenvy = "0.15"
 
+# server
+axum = { version = "0.8", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+utoipa = { version = "5.3", features = ["axum_extras"], optional = true }
+utoipa-swagger-ui = { version = "8.1", features = ["axum"], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
 [dev-dependencies]
 rand = "0.8"
-expiring-bloom-rs = { path = ".", features = ["redb"] }
+expiring-bloom-rs = { path = ".", features = ["redb", "server"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 
+[[bin]]
+name = "bloom-server"
+path = "src/bin/server.rs"
+
 [features]
+default = ["redb", "server"]
 redb = ["dep:redb"]
+server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde", "dep:serde_json"]
 
 [[bench]]
 name = "bloom_benchmarks"
