@@ -1,39 +1,36 @@
 use expiring_bloom_rs::api::create_router;
 use expiring_bloom_rs::types::AppState;
-use expiring_bloom_rs::{
-    FilterConfigBuilder, RedbSlidingBloomFilter, ServerConfig,
-};
+use expiring_bloom_rs::{FilterConfig, RedbSlidingBloomFilter, ServerConfig};
 use std::sync::Arc;
-use tracing::{info, Level};
-use tracing_subscriber::FmtSubscriber;
+use tracing::info;
 
 #[tokio::main]
 async fn main() {
     // Initialize tracing
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
+    // Just initialize default subscriber
+    tracing_subscriber::fmt::init();
+
+    // Or if you want some customization:
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
         .with_target(false)
         .with_thread_ids(true)
         .with_file(true)
         .with_line_number(true)
-        .pretty()
         .init();
 
     // load configuration from environment variables
-    let config = ServerConfig::from_env().expect("Failed to load configuration");
+    let server_config =
+        ServerConfig::from_env().expect("Unable to load server config from env.");
+    let filter_config = FilterConfig::try_from(server_config.clone())
+        .expect("Unable to convert ServerConfig into FilterConfig");
 
-    // Initialize the Bloom filter with configuration
-    let filter_config = FilterConfigBuilder::default()
-        .capacity(config.bloom_capacity)
-        .false_positive_rate(config.bloom_false_positive_rate)
-        .level_duration(config.bloom_level_duration)
-        .max_levels(config.bloom_max_levels)
-        .build()
-        .expect("Failed to build filter config");
+    // Store the db path before config is moved
+    let db_path = server_config.bloom_db_path.clone();
 
     let filter = RedbSlidingBloomFilter::new(
         filter_config.clone(),
-        config.bloom_db_path.clone().into(),
+        server_config.bloom_db_path.into(),
     )
     .expect("Failed to create filter");
 
@@ -42,42 +39,20 @@ async fn main() {
         filter: tokio::sync::Mutex::new(filter),
     });
 
-    // Create router with logging middleware
-    let app = create_router(state.clone()).layer(
-        tower_http::trace::TraceLayer::new_for_http()
-            .make_span_with(|request: &axum::http::Request<_>| {
-                tracing::info_span!(
-                    "http_request",
-                    method = %request.method(),
-                    uri = %request.uri(),
-                    version = ?request.version(),
-                )
-            })
-            .on_response(
-                |response: &axum::http::Response<_>,
-                 latency: std::time::Duration,
-                 _span: &tracing::Span| {
-                    tracing::info!(
-                        status = %response.status(),
-                        latency = ?latency,
-                        "response generated"
-                    );
-                },
-            ),
-    );
+    // Create router
+    let app = create_router(state.clone());
 
     // Build address string
-    let addr = format!("{}:{}", config.server_host, config.server_port);
+    let addr = format!(
+        "{}:{}",
+        server_config.server_host, server_config.server_port
+    );
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
 
     // Calculate the memory usage estimation
     let bits_per_level = filter_config.capacity;
     let total_bits = bits_per_level * filter_config.max_levels;
     let estimated_memory_kb = (total_bits as f64 / 8.0 / 1024.0).ceil();
-
-    let level_duration = filter_config.level_duration;
-    let max_levels = filter_config.max_levels;
-    let false_positive_rate = filter_config.false_positive_rate.clone();
 
     info!(
         r#"
@@ -109,12 +84,12 @@ async fn main() {
        
     🔧 Performance Mode: {}
     "#,
-        bits_per_level,
-        false_positive_rate * 100.0,
-        max_levels,
-        level_duration,
+        filter_config.capacity,
+        filter_config.false_positive_rate * 100.0,
+        filter_config.max_levels,
+        filter_config.level_duration,
         estimated_memory_kb,
-        &config.bloom_db_path,
+        db_path,
         addr,
         addr,
         addr,

@@ -19,6 +19,16 @@ pub enum BloomError {
     #[error("Serialization error: {0}")]
     SerializationError(String),
 
+    #[error("Invalid configuration: {0}")]
+    InvalidConfig(String),
+
+    #[error("Failed to parse environment variable {var_name}: value '{value}' - {error}")]
+    EnvParseError {
+        var_name: String,
+        value: String,
+        error: String,
+    },
+
     #[cfg(feature = "redb")]
     #[error("ReDB error: {0}")]
     RedbError(#[from] redb::Error),
