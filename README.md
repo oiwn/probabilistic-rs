@@ -131,8 +131,10 @@ Memory usage is calculated as:
 
 ```
 total_bits = capacity * max_levels
-memory_bytes = total_bits / 8
+memory_bytes = total_bits * 8
 ```
+
+Since i use `u8` to store `bool`.
 
 ## Contributing
 

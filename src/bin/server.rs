@@ -47,7 +47,7 @@ async fn main() {
     // Calculate the memory usage estimation
     let bits_per_level = filter_config.capacity;
     let total_bits = bits_per_level * filter_config.max_levels;
-    let estimated_memory_kb = (total_bits as f64 / 8.0 / 1024.0).ceil();
+    let estimated_memory_kb = (total_bits as f64 * 8.0 / 1024.0).ceil();
 
     info!(
         r#"
