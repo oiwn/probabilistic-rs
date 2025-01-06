@@ -43,6 +43,10 @@ name = "bloom-server"
 path = "src/bin/server.rs"
 required-features = ["server", "redb"]
 
+[package.metadata.docs.rs]
+no-default-features = true
+features = ["redb"]
+
 [features]
 default = ["redb", "server"]
 redb = ["dep:redb"]
