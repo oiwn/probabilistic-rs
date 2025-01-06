@@ -9,23 +9,35 @@ bitvec = "1"
 fnv = "1"
 murmur3 = "0.5"
 thiserror = "2"
-serde = { version = "1", features = ["derive"] }
 redb = { version = "2", optional = true }
-async-trait = { version = "0.1", optional = true }
-rustis = { version = "0.13", features = ["tokio-runtime"], optional = true }
-tokio = { version = "1.42", features = ["full"], optional = true }
 derive_builder = "0.20"
-redis = { version = "0.27", optional = true }
-dotenvy = "0.15"
+
+# server
+dotenvy = { version = "0.15", optional = true }
+axum = { version = "0.8", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+utoipa = { version = "5.3", features = ["axum_extras"], optional = true }
+utoipa-swagger-ui = { version = "8.1", features = ["axum"], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+tracing-subscriber = "0.3.19"
+tracing = "0.1.41"
+# tower-http = { version = "0.6.2", features = ["trace"] }
 
 [dev-dependencies]
 rand = "0.8"
-expiring-bloom-rs = { path = ".", features = ["redb"] }
+expiring-bloom-rs = { path = ".", features = ["redb", "server"] }
 criterion = { version = "0.5", features = ["html_reports"] }
+tower = "0.5.2"
+
+[[bin]]
+name = "bloom-server"
+path = "src/bin/server.rs"
 
 [features]
-redis = ["dep:redis"]
+default = ["redb", "server"]
 redb = ["dep:redb"]
+server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde", "dep:serde_json", "dep:dotenvy"]
 
 [[bench]]
 name = "bloom_benchmarks"

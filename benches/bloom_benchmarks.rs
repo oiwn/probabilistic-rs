@@ -1,7 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use expiring_bloom_rs::{
-    default_hash_function, inmemory_storage::InMemoryStorage, BloomFilterStorage,
-    SlidingBloomFilter,
+    default_hash_function, BloomStorage, InMemoryStorage, SlidingBloomFilter,
 };
 use rand::{distributions::Alphanumeric, Rng};
 use std::{time::Duration, time::SystemTime};
@@ -35,22 +34,6 @@ fn create_expired_timestamps(
             None => SystemTime::UNIX_EPOCH, // Fallback to epoch if overflow
         };
     vec![past; num_levels]
-}
-
-// Helper to create a bloom filter with given storage
-fn create_bloom_filter<S: BloomFilterStorage>(
-    storage: S,
-    capacity: usize,
-    fpr: f64,
-) -> Result<SlidingBloomFilter<S>, Box<dyn std::error::Error>> {
-    Ok(SlidingBloomFilter::new(
-        storage,
-        capacity,
-        fpr,
-        Duration::from_secs(1),
-        5,
-        default_hash_function,
-    )?)
 }
 
 fn bench_insert(c: &mut Criterion) {

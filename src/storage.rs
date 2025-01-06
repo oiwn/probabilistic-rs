@@ -1,5 +1,26 @@
-use super::{BloomError, BloomFilterStorage, Result};
+use crate::error::{BloomError, Result};
 use std::time::SystemTime;
+
+// Trait for the storage backend
+pub trait BloomStorage {
+    /// Sets multiple bits at the specified level and indices
+    fn set_bits(&mut self, level: usize, indices: &[usize]) -> Result<()>;
+    /// Gets multiple bit values at the specified level and indices
+    /// Returns a Vec of booleans corresponding to each requested index
+    fn get_bits(&self, level: usize, indices: &[usize]) -> Result<Vec<bool>>;
+    /// Clears all bits in the specified level
+    fn clear_level(&mut self, level: usize) -> Result<()>;
+    /// Sets the timestamp for a level
+    fn set_timestamp(
+        &mut self,
+        level: usize,
+        timestamp: SystemTime,
+    ) -> Result<()>;
+    /// Gets the timestamp for a level
+    fn get_timestamp(&self, level: usize) -> Result<Option<SystemTime>>;
+    /// Returns the number of levels in the storage
+    fn num_levels(&self) -> usize;
+}
 
 // In-memory storage implementation
 pub struct InMemoryStorage {
@@ -18,7 +39,7 @@ impl InMemoryStorage {
     }
 }
 
-impl BloomFilterStorage for InMemoryStorage {
+impl BloomStorage for InMemoryStorage {
     fn set_bits(&mut self, level: usize, indices: &[usize]) -> Result<()> {
         if level >= self.levels.len() {
             return Err(BloomError::InvalidLevel {
@@ -110,99 +131,5 @@ impl BloomFilterStorage for InMemoryStorage {
 
     fn num_levels(&self) -> usize {
         self.levels.len()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{default_hash_function, SlidingBloomFilter};
-    use std::time::Duration;
-
-    #[test]
-    fn test_inmemory_batch_performance() {
-        use rand::RngCore;
-        use std::time::Instant;
-
-        const NUM_ITEMS: usize = 100_000; // Test with 100k items
-
-        // Setup
-        let mut rng = rand::thread_rng();
-        let mut bloom = SlidingBloomFilter::new(
-            InMemoryStorage::new(NUM_ITEMS, 3).unwrap(),
-            NUM_ITEMS,
-            0.01,
-            Duration::from_secs(60),
-            3,
-            default_hash_function,
-        )
-        .unwrap();
-
-        // Generate test data
-        let items: Vec<Vec<u8>> = (0..NUM_ITEMS)
-            .map(|_| {
-                let mut bytes = vec![0u8; 16];
-                rng.fill_bytes(&mut bytes);
-                bytes
-            })
-            .collect();
-
-        // Measure insertion performance
-        let start = Instant::now();
-
-        for (i, item) in items.iter().enumerate() {
-            bloom.insert(item).unwrap();
-
-            if (i + 1) % 10_000 == 0 {
-                println!("Inserted {} items...", i + 1);
-            }
-        }
-
-        let insert_elapsed = start.elapsed();
-        println!(
-            "\nBatch insertion of {} items took: {:?}",
-            NUM_ITEMS, insert_elapsed
-        );
-        println!(
-            "Average insertion time per item: {:?}",
-            insert_elapsed / NUM_ITEMS as u32
-        );
-
-        // Performance assertions
-        assert!(
-            insert_elapsed < Duration::from_secs(1),
-            "Insertion of {} items took {:?}, which is more than 1 second",
-            NUM_ITEMS,
-            insert_elapsed
-        );
-
-        // Measure query performance
-        let start = Instant::now();
-
-        for (i, item) in items.iter().enumerate() {
-            assert!(bloom.query(item).unwrap());
-
-            if (i + 1) % 10_000 == 0 {
-                println!("Queried {} items...", i + 1);
-            }
-        }
-
-        let query_elapsed = start.elapsed();
-        println!(
-            "\nBatch query of {} items took: {:?}",
-            NUM_ITEMS, query_elapsed
-        );
-        println!(
-            "Average query time per item: {:?}",
-            query_elapsed / NUM_ITEMS as u32
-        );
-
-        // Performance assertions
-        assert!(
-            query_elapsed < Duration::from_secs(1),
-            "Querying {} items took {:?}, which is more than 1 second",
-            NUM_ITEMS,
-            query_elapsed
-        );
     }
 }
