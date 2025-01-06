@@ -7,10 +7,6 @@ use tracing::info;
 #[tokio::main]
 async fn main() {
     // Initialize tracing
-    // Just initialize default subscriber
-    tracing_subscriber::fmt::init();
-
-    // Or if you want some customization:
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .with_target(false)

@@ -22,7 +22,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 tracing-subscriber = "0.3.19"
 tracing = "0.1.41"
-tower-http = { version = "0.6.2", features = ["trace"] }
+# tower-http = { version = "0.6.2", features = ["trace"] }
 
 [dev-dependencies]
 rand = "0.8"
