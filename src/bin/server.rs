@@ -55,7 +55,7 @@ async fn main() {
 
          ,~~.
         (  6 )-_,
-         (\_/)\  )\  /     < Ready to filter with blazing speed! >
+         (\_/)\  )\  / < Ready to filter with blazing speed! >
           \  |  ) |
           ^^ ^^   ^^
     

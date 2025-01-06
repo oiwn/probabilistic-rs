@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use expiring_bloom_rs::{
-    default_hash_function, BloomStorage, InMemoryStorage, SlidingBloomFilter,
+    FilterConfigBuilder, InMemorySlidingBloomFilter, SlidingBloomFilter,
 };
 use rand::{distributions::Alphanumeric, Rng};
 use std::{time::Duration, time::SystemTime};
@@ -17,6 +17,19 @@ fn generate_random_string(len: usize) -> String {
 // Helper to create test data
 fn generate_test_data(count: usize) -> Vec<String> {
     (0..count).map(|_| generate_random_string(32)).collect()
+}
+
+fn create_test_filter(capacity: usize) -> InMemorySlidingBloomFilter {
+    let config = FilterConfigBuilder::default()
+        .capacity(capacity)
+        .false_positive_rate(0.01)
+        .level_duration(Duration::from_secs(1))
+        .max_levels(5)
+        .build()
+        .expect("Failed to create config");
+
+    InMemorySlidingBloomFilter::new(config)
+        .expect("Failed to create Bloom filter")
 }
 
 // Helper to create "expired" timestamps
@@ -44,20 +57,13 @@ fn bench_insert(c: &mut Criterion) {
         let test_data = generate_test_data(capacity);
 
         // Benchmark in-memory storage
+
         group.bench_with_input(
             BenchmarkId::new("inmemory", capacity),
             &(capacity, &test_data),
             |b, (cap, data)| {
                 b.iter_batched(
-                    || {
-                        create_bloom_filter(
-                            InMemoryStorage::new(*cap, 5)
-                                .expect("Failed to create InMemory storage"),
-                            *cap,
-                            0.01,
-                        )
-                        .expect("Failed to create Bloom filter")
-                    },
+                    || create_test_filter(*cap),
                     |mut filter| {
                         for item in data.iter() {
                             if let Err(e) = filter.insert(item.as_bytes()) {
@@ -87,12 +93,7 @@ fn bench_query(c: &mut Criterion) {
             BenchmarkId::new("inmemory", capacity),
             &(capacity, &known_data, &unknown_data),
             |b, (cap, known, unknown)| {
-                let mut filter = create_bloom_filter(
-                    InMemoryStorage::new(*cap, 5).unwrap(),
-                    *cap,
-                    0.01,
-                )
-                .unwrap();
+                let mut filter = create_test_filter(*cap);
 
                 // Insert known data
                 for item in known.iter() {
@@ -114,58 +115,5 @@ fn bench_query(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_cleanup(c: &mut Criterion) {
-    let mut group = c.benchmark_group("cleanup_operations");
-
-    for capacity in [1_000, 100_000, 1_000_000] {
-        let test_data = generate_test_data(capacity);
-
-        group.bench_with_input(
-            BenchmarkId::new("inmemory", capacity),
-            &(capacity, &test_data),
-            |b, (cap, data)| {
-                b.iter_with_setup(
-                    || {
-                        // Setup: Create filter and insert data with artificially expired timestamps
-                        let mut filter = SlidingBloomFilter::new(
-                            InMemoryStorage::new(*cap, 5).unwrap(),
-                            *cap,
-                            0.01,
-                            Duration::from_secs(1),
-                            5,
-                            default_hash_function,
-                        )
-                        .unwrap();
-
-                        // Insert test data
-                        for item in data.iter() {
-                            filter.insert(item.as_bytes()).unwrap();
-                        }
-
-                        // Artificially expire the timestamps
-                        let expired_timestamps =
-                            create_expired_timestamps(5, Duration::from_secs(6));
-                        for (level, timestamp) in
-                            expired_timestamps.iter().enumerate()
-                        {
-                            filter
-                                .storage
-                                .set_timestamp(level, *timestamp)
-                                .unwrap();
-                        }
-
-                        filter
-                    },
-                    |mut filter| {
-                        // Benchmark just the cleanup operation
-                        filter.cleanup_expired_levels().unwrap();
-                    },
-                );
-            },
-        );
-    }
-    group.finish();
-}
-
-criterion_group!(benches, bench_insert, bench_query, bench_cleanup);
+criterion_group!(benches, bench_insert, bench_query);
 criterion_main!(benches);

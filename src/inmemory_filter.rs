@@ -6,10 +6,10 @@ use std::time::SystemTime;
 
 // Base filter implementation
 pub struct InMemorySlidingBloomFilter {
-    storage: InMemoryStorage,
-    config: FilterConfig,
-    num_hashes: usize,
-    current_level_index: usize,
+    pub storage: InMemoryStorage,
+    pub config: FilterConfig,
+    pub num_hashes: usize,
+    pub current_level_index: usize,
 }
 
 impl InMemorySlidingBloomFilter {

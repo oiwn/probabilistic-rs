@@ -2,6 +2,15 @@
 name = "expiring-bloom-rs"
 version = "0.1.0"
 edition = "2021"
+authors = ["oiwn"]
+description = "A time-decaying Bloom filter implementation with multiple storage backends"
+repository = "https://github.com/oiwn/expiring-bloom-rs"
+documentation = "https://docs.rs/expiring-bloom-rs"
+homepage = "https://github.com/yourusername/expiring-bloom-rs"
+license = "MIT"
+readme = "README.md"
+keywords = ["bloom-filter", "probabilistic", "time-decay", "cache", "rate-limiting"]
+categories = ["algorithms", "caching", "data-structures"]
 
 [dependencies]
 bincode = "1"
