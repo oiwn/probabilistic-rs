@@ -41,11 +41,12 @@ tower = "0.5.2"
 [[bin]]
 name = "bloom-server"
 path = "src/bin/server.rs"
+required-features = ["server", "redb"]
 
 [features]
 default = ["redb", "server"]
 redb = ["dep:redb"]
-server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde", "dep:serde_json", "dep:dotenvy"]
+server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde", "dep:serde_json", "dep:dotenvy", "dep:redb"]
 
 [[bench]]
 name = "bloom_benchmarks"
