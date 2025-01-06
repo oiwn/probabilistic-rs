@@ -36,10 +36,13 @@ mod redb_filter;
 mod storage;
 
 pub use error::{BloomError, Result};
-pub use filter::{FilterConfig, SlidingBloomFilter};
+pub use filter::{
+    FilterConfig, FilterConfigBuilder, FilterConfigBuilderError,
+    SlidingBloomFilter,
+};
 pub use hash::{default_hash_function, HashFunction};
 pub use inmemory_filter::InMemorySlidingBloomFilter;
-// pub use redb_filter::{RedbConfig, RedbSlidingBloomFilter};
+pub use redb_filter::RedbSlidingBloomFilter;
 pub use storage::{BloomStorage, InMemoryStorage};
 
 // pub use crate::expiring_bloom::{
