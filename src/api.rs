@@ -6,6 +6,7 @@ use axum::{
     Json, Router,
 };
 use std::sync::Arc;
+use tracing::debug;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -39,6 +40,7 @@ struct ApiDoc;
     )
 )]
 async fn health_check() -> impl IntoResponse {
+    debug!("Health check");
     StatusCode::OK
 }
 
@@ -57,6 +59,7 @@ async fn insert_item(
     State(state): State<Arc<AppState>>,
     Json(request): Json<InsertRequest>,
 ) -> impl IntoResponse {
+    debug!("Inserting item: {}", &request.value);
     let mut filter = state.filter.lock().await;
     match filter.insert(request.value.as_bytes()) {
         Ok(_) => StatusCode::OK.into_response(),
@@ -87,6 +90,7 @@ async fn query_item(
     State(state): State<Arc<AppState>>,
     Path(value): Path<String>,
 ) -> impl IntoResponse {
+    debug!("Querying item: {}", &value);
     let filter = state.filter.lock().await;
     match filter.query(value.as_bytes()) {
         Ok(exists) => {

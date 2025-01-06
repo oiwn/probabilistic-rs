@@ -49,3 +49,7 @@ pub use inmemory_filter::InMemorySlidingBloomFilter;
 #[cfg(feature = "redb")]
 pub use redb_filter::RedbSlidingBloomFilter;
 pub use storage::{BloomStorage, InMemoryStorage};
+#[cfg(feature = "server")]
+pub use types::{
+    AppState, ServerConfig, ServerConfigBuilder, ServerConfigBuilderError,
+};

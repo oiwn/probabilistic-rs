@@ -2,7 +2,7 @@ use crate::error::{BloomError, Result};
 use crate::filter::{FilterConfig, SlidingBloomFilter};
 use crate::hash::{optimal_bit_vector_size, optimal_num_hashes};
 use crate::storage::{BloomStorage, InMemoryStorage};
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, TableDefinition};
 use std::{path::PathBuf, sync::Arc, time::SystemTime};
 
 // Define table schemas for ReDB
