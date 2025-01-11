@@ -3,6 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/expiring-bloom-rs.svg)](https://crates.io/crates/expiring-bloom-rs)
 [![Documentation](https://docs.rs/expiring-bloom-rs/badge.svg)](https://docs.rs/expiring-bloom-rs)
 [![codecov](https://codecov.io/gh/oiwn/expiring-bloom-rs/graph/badge.svg?token=5JMM0V5RFO)](https://codecov.io/gh/oiwn/expiring-bloom-rs)
+[![dependency status](https://deps.rs/repo/github/oiwn/expiring-bloom-rs/status.svg)](https://deps.rs/repo/github/oiwn/expiring-bloom-rs)
 
 # Time-Decaying Bloom Filter
 
