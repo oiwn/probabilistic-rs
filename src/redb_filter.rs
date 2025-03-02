@@ -182,6 +182,7 @@ impl SlidingBloomFilter for RedbSlidingBloomFilter {
         Ok(false)
     }
 
+    // TODO: return amount of levels cleared
     fn cleanup_expired_levels(&mut self) -> Result<()> {
         let now = SystemTime::now();
         for level in 0..self.config.max_levels {
