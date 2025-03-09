@@ -52,7 +52,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
         
       - name: Generate code coverage
-        run: cargo llvm-cov --workspace --lcov --output-path lcov.info --ignore-filename-regex "src/bin/.*"
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info --ignore-filename-regex "src/bin/.*" --ignore-filename-regex "src/tui.rs"
         
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
