@@ -1,4 +1,3 @@
-// src/bin/cli.rs
 use clap::{Parser, Subcommand};
 use expiring_bloom_rs::{
     FilterConfigBuilder, RedbSlidingBloomFilter, SlidingBloomFilter,
