@@ -15,7 +15,7 @@ categories = ["algorithms", "caching", "data-structures"]
 default-run = "expblf"
 
 [dependencies]
-bincode = "1"
+bincode = "1"  # TODO: upgrade to v2
 fnv = "1"
 murmur3 = "0.5"
 thiserror = "2"
