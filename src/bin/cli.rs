@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use expiring_bloom_rs::{
     FilterConfigBuilder, RedbSlidingBloomFilter, SlidingBloomFilter,
     optimal_bit_vector_size, optimal_num_hashes,
-    tui::{App, InputMode, run_app},
+    tui::{App, AppMessage, InputMode, MessageType, run_app},
 };
 use ratatui::{
     Terminal,
@@ -257,10 +257,13 @@ pub fn run_tui(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let app = App {
         filter,
         input: String::new(),
-        messages: vec![
-            format!("Bloom Filter TUI - Database: {}", db_path.display()),
-            "Press 'i' to insert, 'c' to check, 'e' to clean expired, 'q' to quit".to_string(),
-        ],
+        messages: vec![AppMessage {
+            content: format!(
+                "Bloom Filter TUI - Database: {}",
+                db_path.display()
+            ),
+            msg_type: MessageType::Info,
+        }],
         input_mode: InputMode::Normal,
     };
 

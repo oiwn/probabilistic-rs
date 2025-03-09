@@ -17,10 +17,21 @@ pub enum InputMode {
     Checking,
 }
 
+pub enum MessageType {
+    Success, // For "exists" messages - green
+    Error,   // For "does not exist" messages - red
+    Info,    // For regular informational messages - white
+}
+
+pub struct AppMessage {
+    pub content: String,
+    pub msg_type: MessageType,
+}
+
 pub struct App {
     pub filter: RedbSlidingBloomFilter,
     pub input: String,
-    pub messages: Vec<String>,
+    pub messages: Vec<AppMessage>,
     pub input_mode: InputMode,
 }
 
@@ -50,14 +61,20 @@ pub fn run_app<B: Backend>(
                         }
                         KeyCode::Char('e') => {
                             if let Err(e) = app.filter.cleanup_expired_levels() {
-                                app.messages.push(format!(
+                                let content = format!(
                                     "Error cleaning expired levels: {}",
                                     e
-                                ));
-                            } else {
-                                app.messages.push(
-                                    "Cleaned up expired levels".to_string(),
                                 );
+                                app.messages.push(AppMessage {
+                                    content,
+                                    msg_type: MessageType::Error,
+                                });
+                            } else {
+                                app.messages.push(AppMessage {
+                                    content: "Cleaned up expired levels"
+                                        .to_string(),
+                                    msg_type: MessageType::Success,
+                                });
                             }
                         }
                         KeyCode::Char('q') => {
@@ -74,36 +91,55 @@ pub fn run_app<B: Backend>(
                                         if let Err(e) =
                                             app.filter.insert(input.as_bytes())
                                         {
-                                            app.messages.push(format!(
+                                            let content = format!(
                                                 "Error inserting element: {}",
                                                 e
-                                            ));
+                                            );
+                                            app.messages.push(AppMessage {
+                                                content,
+                                                msg_type: MessageType::Error,
+                                            });
                                         } else {
-                                            app.messages.push(format!(
-                                                "Inserted: {}",
-                                                input
-                                            ));
+                                            let content =
+                                                format!("Inserted: {}", input);
+                                            app.messages.push(AppMessage {
+                                                content,
+                                                msg_type: MessageType::Info,
+                                            });
                                         }
                                     }
                                     InputMode::Checking => {
                                         match app.filter.query(input.as_bytes()) {
                                             Ok(exists) => {
                                                 if exists {
-                                                    app.messages.push(format!(
+                                                    let content = format!(
                                                         "'{}' exists",
                                                         input
-                                                    ));
+                                                    );
+                                                    app.messages
+                                                        .push(AppMessage {
+                                                        content,
+                                                        msg_type:
+                                                            MessageType::Success,
+                                                    });
                                                 } else {
-                                                    app.messages.push(format!(
+                                                    let content = format!(
                                                         "'{}' does not exist",
                                                         input
-                                                    ));
+                                                    );
+                                                    app.messages.push(AppMessage { content, msg_type: MessageType::Error });
                                                 }
                                             }
-                                            Err(e) => app.messages.push(format!(
-                                                "Error checking element: {}",
-                                                e
-                                            )),
+                                            Err(e) => {
+                                                let content = format!(
+                                                    "Error checking element: {}",
+                                                    e
+                                                );
+                                                app.messages.push(AppMessage {
+                                                    content,
+                                                    msg_type: MessageType::Error,
+                                                });
+                                            }
                                         }
                                     }
                                     _ => {}
@@ -120,8 +156,10 @@ pub fn run_app<B: Backend>(
                             KeyCode::Esc => {
                                 app.input.clear();
                                 app.input_mode = InputMode::Normal;
-                                app.messages
-                                    .push("Cancelled operation".to_string());
+                                app.messages.push(AppMessage {
+                                    content: "Cancelled operation".to_string(),
+                                    msg_type: MessageType::Info,
+                                });
                             }
                             _ => {}
                         }
@@ -220,12 +258,20 @@ fn ui(f: &mut Frame, app: &App) {
         ),
     }
 
-    // Messages
+    // Rendering messages
     let messages: Vec<ListItem> = app
         .messages
         .iter()
-        .map(|m| ListItem::new(Line::from(Span::raw(m))))
+        .map(|m| {
+            let style = match m.msg_type {
+                MessageType::Success => Style::default().fg(Color::Green),
+                MessageType::Error => Style::default().fg(Color::Red),
+                MessageType::Info => Style::default().fg(Color::White),
+            };
+            ListItem::new(Line::from(Span::styled(&m.content, style)))
+        })
         .collect();
+
     let messages = List::new(messages)
         .block(Block::default().borders(Borders::ALL).title("Messages"))
         .style(Style::default().fg(Color::White))
