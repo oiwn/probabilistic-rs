@@ -22,7 +22,9 @@ pub enum BloomError {
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
 
-    #[error("Failed to parse environment variable {var_name}: value '{value}' - {error}")]
+    #[error(
+        "Failed to parse environment variable {var_name}: value '{value}' - {error}"
+    )]
     EnvParseError {
         var_name: String,
         value: String,

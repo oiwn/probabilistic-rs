@@ -47,8 +47,8 @@ pub use filter::{
     SlidingBloomFilter,
 };
 pub use hash::{
-    default_hash_function, optimal_bit_vector_size, optimal_num_hashes,
-    HashFunction,
+    HashFunction, default_hash_function, optimal_bit_vector_size,
+    optimal_num_hashes,
 };
 pub use inmemory_filter::InMemorySlidingBloomFilter;
 #[cfg(feature = "redb")]
