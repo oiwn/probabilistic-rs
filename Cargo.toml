@@ -57,7 +57,8 @@ required-features = ["server", "redb"]
 
 [package.metadata.docs.rs]
 no-default-features = true
-features = ["redb"]
+features = ["redb", "cli"]
+all-features = false
 
 [features]
 default = ["redb", "server", "cli"]
