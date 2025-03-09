@@ -19,6 +19,7 @@ Cargo.lock
 .DS_Store
 *.redb
 /tmp
+CLAUDE.md
 
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

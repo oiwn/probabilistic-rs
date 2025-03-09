@@ -36,6 +36,8 @@ mod inmemory_filter;
 #[cfg(feature = "redb")]
 mod redb_filter;
 mod storage;
+#[cfg(feature = "cli")]
+pub mod tui;
 #[cfg(feature = "server")]
 pub mod types;
 
@@ -44,7 +46,10 @@ pub use filter::{
     FilterConfig, FilterConfigBuilder, FilterConfigBuilderError,
     SlidingBloomFilter,
 };
-pub use hash::{default_hash_function, HashFunction};
+pub use hash::{
+    HashFunction, default_hash_function, optimal_bit_vector_size,
+    optimal_num_hashes,
+};
 pub use inmemory_filter::InMemorySlidingBloomFilter;
 #[cfg(feature = "redb")]
 pub use redb_filter::RedbSlidingBloomFilter;

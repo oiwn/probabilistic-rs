@@ -27,7 +27,7 @@ mod tests {
             .unwrap();
 
         let mut filter =
-            RedbSlidingBloomFilter::new(config, path.clone()).unwrap();
+            RedbSlidingBloomFilter::new(Some(config), path.clone()).unwrap();
 
         // Test insert and query
         filter.insert(b"test1").unwrap();
@@ -52,7 +52,7 @@ mod tests {
         // Insert data with first instance
         {
             let mut filter =
-                RedbSlidingBloomFilter::new(config.clone(), path.clone())
+                RedbSlidingBloomFilter::new(Some(config.clone()), path.clone())
                     .unwrap();
             filter.insert(b"persist_test").unwrap();
             assert!(filter.query(b"persist_test").unwrap());
@@ -61,7 +61,7 @@ mod tests {
         // Verify data with second instance
         {
             let filter =
-                RedbSlidingBloomFilter::new(config, path.clone()).unwrap();
+                RedbSlidingBloomFilter::new(Some(config), path.clone()).unwrap();
             assert!(filter.query(b"persist_test").unwrap());
         }
 
@@ -80,7 +80,7 @@ mod tests {
             .unwrap();
 
         let mut filter =
-            RedbSlidingBloomFilter::new(config, path.clone()).unwrap();
+            RedbSlidingBloomFilter::new(Some(config), path.clone()).unwrap();
 
         filter.insert(b"expire_test").unwrap();
         assert!(filter.query(b"expire_test").unwrap());

@@ -1,0 +1,16 @@
+delimiter = "---"
+extensions = [".rs", ".toml"]
+llm_prompt = """
+This is a collection of source code files from a project. Each file is separated by '---' delimiters.
+The files include Git metadata showing their last modification details.
+
+Key points for analysis:
+1. Focus on the architectural patterns used across files
+2. Identify any potential code quality issues
+3. Note the temporal relationship between changes using Git timestamps
+4. Suggest improvements while preserving the existing architecture:
+   - Code reuse opportunities
+   - Better abstraction boundaries
+   - Performance optimizations
+   - Enhanced error handling and recovery
+"""

@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
     use axum::{
+        Router,
         body::{self, Body},
         http::{Request, StatusCode},
-        Router,
     };
     use expiring_bloom_rs::api::create_router;
     use expiring_bloom_rs::{
@@ -30,9 +30,11 @@ mod tests {
             .build()
             .unwrap();
 
-        let filter =
-            RedbSlidingBloomFilter::new(config, test_config.bloom_db_path.into())
-                .unwrap();
+        let filter = RedbSlidingBloomFilter::new(
+            Some(config),
+            test_config.bloom_db_path.into(),
+        )
+        .unwrap();
         let state = Arc::new(AppState {
             filter: tokio::sync::Mutex::new(filter),
         });

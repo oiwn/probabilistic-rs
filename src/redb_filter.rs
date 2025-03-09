@@ -1,17 +1,24 @@
 use crate::error::{BloomError, Result};
 use crate::filter::{FilterConfig, SlidingBloomFilter};
-use crate::hash::{optimal_bit_vector_size, optimal_num_hashes};
+use crate::hash::{
+    default_hash_function, optimal_bit_vector_size, optimal_num_hashes,
+};
 use crate::storage::{BloomStorage, InMemoryStorage};
 use redb::{Database, TableDefinition};
-use std::{path::PathBuf, sync::Arc, time::SystemTime};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 // Define table schemas for ReDB
 const BITS_TABLE: TableDefinition<u8, &[u8]> = TableDefinition::new("bits");
 const TIMESTAMPS_TABLE: TableDefinition<u8, &[u8]> =
     TableDefinition::new("timestamps");
+const CONFIG_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("config");
 
 pub struct RedbSlidingBloomFilter {
-    storage: InMemoryStorage,
+    pub storage: InMemoryStorage,
     config: FilterConfig,
     num_hashes: usize,
     current_level_index: usize,
@@ -19,14 +26,55 @@ pub struct RedbSlidingBloomFilter {
 }
 
 impl RedbSlidingBloomFilter {
-    pub fn new(config: FilterConfig, db_path: PathBuf) -> Result<Self> {
-        let db = Arc::new(Database::create(&db_path).map_err(redb::Error::from)?);
+    /// Creates a new or opens an existing RedbSlidingBloomFilter.
+    ///
+    /// If the database file already exists, it loads the configuration from
+    /// the database. In this case, the provided config parameter is ignored.
+    ///
+    /// If the database file doesn't exist, it creates a new one with the provided
+    /// configuration, which must be Some.
+    pub fn new(config: Option<FilterConfig>, db_path: PathBuf) -> Result<Self> {
+        let db_exists = db_path.exists();
+
+        // Handle configuration based on database existence
+        let config = if db_exists {
+            // Database exists, try to load configuration
+            let db =
+                Arc::new(Database::open(&db_path).map_err(redb::Error::from)?);
+            match Self::load_config(&db)? {
+                Some(loaded_config) => (loaded_config, db),
+                None => {
+                    return Err(BloomError::StorageError(
+                        "Database exists but no configuration found".to_string(),
+                    ));
+                }
+            }
+        } else {
+            // Database doesn't exist, require configuration
+            let config = config.ok_or_else(|| {
+                BloomError::InvalidConfig(
+                    "Configuration required for new database".to_string(),
+                )
+            })?;
+
+            // Create new database
+            let db =
+                Arc::new(Database::create(&db_path).map_err(redb::Error::from)?);
+
+            // Save configuration
+            Self::save_config(&db, &config)?;
+
+            (config, db)
+        };
+
+        let (config, db) = config;
+
         let storage = InMemoryStorage::new(config.capacity, config.max_levels)?;
         let bit_vector_size =
             optimal_bit_vector_size(config.capacity, config.false_positive_rate);
         let num_hashes = optimal_num_hashes(config.capacity, bit_vector_size);
 
-        // Try to load existing state or initialize new one
+        // Initialize filter
         let mut filter = Self {
             storage,
             config,
@@ -37,6 +85,148 @@ impl RedbSlidingBloomFilter {
 
         filter.load_state()?;
         Ok(filter)
+    }
+
+    pub fn get_config(&self) -> &FilterConfig {
+        &self.config
+    }
+
+    pub fn get_current_level_index(&self) -> usize {
+        self.current_level_index
+    }
+
+    /* fn save_config(db: &Arc<Database>, config: &FilterConfig) -> Result<()> {
+        let write_txn = db.begin_write().map_err(redb::Error::from)?;
+        {
+            let mut config_table = write_txn
+                .open_table(CONFIG_TABLE)
+                .map_err(redb::Error::from)?;
+
+            // Serialize important config fields
+            let serialized = bincode::serialize(&(
+                config.capacity,
+                config.false_positive_rate,
+                config.max_levels,
+                config.level_duration,
+            ))
+            .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+
+            // Store in database
+            config_table
+                .insert("filter_config", serialized.as_slice())
+                .map_err(redb::Error::from)?;
+
+            // `config_table` goes out of scope here and is dropped
+        }
+
+        // Now it's safe to commit
+        write_txn.commit().map_err(redb::Error::from)?;
+
+        Ok(())
+    }
+
+    fn load_config(db: &Arc<Database>) -> Result<FilterConfig> {
+        let read_txn = db.begin_read().map_err(redb::Error::from)?;
+
+        // Try to open config table
+        let config_table = read_txn
+            .open_table(CONFIG_TABLE)
+            .map_err(redb::Error::from)?;
+
+        // Try to get config
+        if let Some(config_bytes) = config_table
+            .get("filter_config")
+            .map_err(redb::Error::from)?
+        {
+            // Deserialize config
+            let (capacity, false_positive_rate, max_levels, level_duration): (
+                usize,
+                f64,
+                usize,
+                Duration,
+            ) = bincode::deserialize(config_bytes.value())
+                .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+
+            // Rebuild config with default hash function
+            Ok(FilterConfig {
+                capacity,
+                false_positive_rate,
+                max_levels,
+                level_duration,
+                hash_function: default_hash_function,
+            })
+        } else {
+            // No config found, return error
+            Err(BloomError::StorageError(
+                "No configuration found in database".to_string(),
+            ))
+        }
+    } */
+
+    /// Loads filter configuration from the database
+    fn load_config(db: &Arc<Database>) -> Result<Option<FilterConfig>> {
+        let read_txn = db.begin_read().map_err(redb::Error::from)?;
+
+        // Try to open config table, return None if it doesn't exist
+        let config_table = match read_txn.open_table(CONFIG_TABLE) {
+            Ok(table) => table,
+            Err(_) => return Ok(None),
+        };
+
+        // Try to get config
+        if let Some(config_bytes) = config_table
+            .get("filter_config")
+            .map_err(redb::Error::from)?
+        {
+            // Deserialize config
+            let (capacity, false_positive_rate, max_levels, level_duration): (
+                usize,
+                f64,
+                usize,
+                Duration,
+            ) = bincode::deserialize(config_bytes.value())
+                .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+
+            // Rebuild config with default hash function
+            Ok(Some(FilterConfig {
+                capacity,
+                false_positive_rate,
+                max_levels,
+                level_duration,
+                hash_function: default_hash_function,
+            }))
+        } else {
+            // No config found
+            Ok(None)
+        }
+    }
+
+    /// Saves filter configuration to the database
+    fn save_config(db: &Arc<Database>, config: &FilterConfig) -> Result<()> {
+        let write_txn = db.begin_write().map_err(redb::Error::from)?;
+
+        {
+            let mut config_table = write_txn
+                .open_table(CONFIG_TABLE)
+                .map_err(redb::Error::from)?;
+
+            // Serialize important config fields
+            let serialized = bincode::serialize(&(
+                config.capacity,
+                config.false_positive_rate,
+                config.max_levels,
+                config.level_duration,
+            ))
+            .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+
+            // Store in database
+            config_table
+                .insert("filter_config", serialized.as_slice())
+                .map_err(redb::Error::from)?;
+        }
+        write_txn.commit().map_err(redb::Error::from)?;
+
+        Ok(())
     }
 
     fn load_state(&mut self) -> Result<()> {
@@ -182,6 +372,7 @@ impl SlidingBloomFilter for RedbSlidingBloomFilter {
         Ok(false)
     }
 
+    // TODO: return amount of levels cleared
     fn cleanup_expired_levels(&mut self) -> Result<()> {
         let now = SystemTime::now();
         for level in 0..self.config.max_levels {
