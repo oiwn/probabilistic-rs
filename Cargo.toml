@@ -35,6 +35,7 @@ serde_json = { version = "1", optional = true }
 # cli
 clap = { version = "4.5.31", features = ["derive"], optional = true }
 ratatui = { version = "0.29.0", optional = true }
+unicode-width = { version = "0.2", optional = true }
 # redb
 redb = { version = "2", optional = true }
 
@@ -62,9 +63,9 @@ features = ["redb"]
 default = ["redb", "server", "cli"]
 redb = ["dep:redb"]
 server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde", "dep:serde_json", "dep:dotenvy", "dep:redb"]
-clap = ["dep:clap"]
-ratatui = ["dep:ratatui"]
-cli = ["dep:clap", "dep:ratatui", "redb"]
+# clap = ["dep:clap"]
+# ratatui = ["dep:ratatui"]
+cli = ["dep:clap", "dep:ratatui", "dep:unicode-width", "redb"]
 
 [[bench]]
 name = "bloom_benchmarks"

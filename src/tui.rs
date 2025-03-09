@@ -1,77 +1,30 @@
-use crate::RedbSlidingBloomFilter;
-use ratatui::crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
-    terminal::{
-        disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
-        LeaveAlternateScreen,
-    },
-};
+use crate::{RedbSlidingBloomFilter, SlidingBloomFilter};
 use ratatui::{
-    backend::{Backend, CrosstermBackend},
+    Frame, Terminal,
+    backend::Backend,
+    crossterm::event::{self, Event, KeyCode},
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, Paragraph},
-    Frame, Terminal,
 };
-use std::{io, path::PathBuf, time::Duration};
+use std::{io, time::Duration};
+use unicode_width::UnicodeWidthStr;
 
-// Add this function to handle the TUI
-fn run_tui(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    // Setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    // Create app state
-    let config = create_filter_config();
-    let filter = RedbSlidingBloomFilter::new(config, db_path.clone())?;
-    let app = App {
-        filter,
-        input: String::new(),
-        messages: vec![
-            format!("Bloom Filter TUI - Database: {}", db_path.display()),
-            "Press 'i' to insert, 'c' to check, 'e' to clean expired, 'q' to quit".to_string(),
-        ],
-        input_mode: InputMode::Normal,
-    };
-
-    // Run the app
-    let res = run_app(&mut terminal, app);
-
-    // Restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    if let Err(err) = res {
-        println!("{:?}", err)
-    }
-
-    Ok(())
-}
-
-enum InputMode {
+pub enum InputMode {
     Normal,
     Inserting,
     Checking,
 }
 
-struct App {
-    filter: RedbSlidingBloomFilter,
-    input: String,
-    messages: Vec<String>,
-    input_mode: InputMode,
+pub struct App {
+    pub filter: RedbSlidingBloomFilter,
+    pub input: String,
+    pub messages: Vec<String>,
+    pub input_mode: InputMode,
 }
 
-fn run_app<B: Backend>(
+pub fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
 ) -> io::Result<()> {
@@ -85,15 +38,15 @@ fn run_app<B: Backend>(
                         KeyCode::Char('i') => {
                             app.input_mode = InputMode::Inserting;
                             app.input.clear();
-                            app.messages.push("Enter element to insert (press Enter when done):".to_string());
+                            // app.messages.push("Enter element to insert (press Enter when done):".to_string());
                         }
                         KeyCode::Char('c') => {
                             app.input_mode = InputMode::Checking;
                             app.input.clear();
-                            app.messages.push(
-                                "Enter element to check (press Enter when done):"
-                                    .to_string(),
-                            );
+                            // app.messages.push(
+                            //     "Enter element to check (press Enter when done):"
+                            //         .to_string(),
+                            // );
                         }
                         KeyCode::Char('e') => {
                             if let Err(e) = app.filter.cleanup_expired_levels() {
@@ -136,9 +89,15 @@ fn run_app<B: Backend>(
                                         match app.filter.query(input.as_bytes()) {
                                             Ok(exists) => {
                                                 if exists {
-                                                    app.messages.push(format!("'{}' exists in the filter", input));
+                                                    app.messages.push(format!(
+                                                        "'{}' exists",
+                                                        input
+                                                    ));
                                                 } else {
-                                                    app.messages.push(format!("'{}' does not exist in the filter", input));
+                                                    app.messages.push(format!(
+                                                        "'{}' does not exist",
+                                                        input
+                                                    ));
                                                 }
                                             }
                                             Err(e) => app.messages.push(format!(
@@ -173,7 +132,7 @@ fn run_app<B: Backend>(
     }
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn ui(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
@@ -185,7 +144,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
             ]
             .as_ref(),
         )
-        .split(f.size());
+        .split(f.area());
 
     let (msg, style) = match app.input_mode {
         InputMode::Normal => (
@@ -235,14 +194,16 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
             Style::default(),
         ),
     };
-    let mut text = Text::from(Spans::from(msg));
-    text.patch_style(style);
+
+    // TODO: wtf is it
+    let text = Text::from(Line::from(msg));
+    let text = text.clone().patch_style(style);
     let help_message =
         Paragraph::new(text).style(Style::default().fg(Color::Cyan));
     f.render_widget(help_message, chunks[0]);
 
     // Input
-    let input = Paragraph::new(app.input.as_ref())
+    let input = Paragraph::new(app.input.as_str())
         .style(match app.input_mode {
             InputMode::Normal => Style::default(),
             _ => Style::default().fg(Color::Yellow),
@@ -253,9 +214,9 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     // Set cursor position
     match app.input_mode {
         InputMode::Normal => {}
-        _ => f.set_cursor(
-            chunks[1].x + app.input.width() as u16 + 1,
-            chunks[1].y + 1,
+        _ => f.set_cursor_position(
+            // Use correct width calculation for Unicode strings
+            (chunks[1].x + app.input.width() as u16 + 1, chunks[1].y + 1),
         ),
     }
 
@@ -263,7 +224,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     let messages: Vec<ListItem> = app
         .messages
         .iter()
-        .map(|m| ListItem::new(Spans::from(Span::raw(m))))
+        .map(|m| ListItem::new(Line::from(Span::raw(m))))
         .collect();
     let messages = List::new(messages)
         .block(Block::default().borders(Borders::ALL).title("Messages"))

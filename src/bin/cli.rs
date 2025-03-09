@@ -2,8 +2,25 @@ use clap::{Parser, Subcommand};
 use expiring_bloom_rs::{
     FilterConfigBuilder, RedbSlidingBloomFilter, SlidingBloomFilter,
     optimal_bit_vector_size, optimal_num_hashes,
+    tui::{App, InputMode, run_app},
 };
-use std::{path::PathBuf, time::Duration};
+use ratatui::{
+    Terminal,
+    backend::CrosstermBackend,
+    crossterm::{
+        event::{DisableMouseCapture, EnableMouseCapture},
+        execute,
+        terminal::{
+            EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+            enable_raw_mode,
+        },
+    },
+};
+use std::{
+    io,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -135,7 +152,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Tui { db_path } => {
             println!("Run tui: {}", db_path.as_path().to_str().unwrap());
-            // run_tui(db_path)?;
+            run_tui(db_path)?;
         }
     }
 
@@ -224,4 +241,44 @@ fn confirm_action(prompt: &str) -> bool {
     io::stdin().read_line(&mut input).unwrap();
 
     input.trim().to_lowercase() == "y"
+}
+
+// Add this function to handle the TUI
+pub fn run_tui(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    // Setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // Create app state
+    let filter = RedbSlidingBloomFilter::new(None, db_path.to_path_buf())?;
+    let app = App {
+        filter,
+        input: String::new(),
+        messages: vec![
+            format!("Bloom Filter TUI - Database: {}", db_path.display()),
+            "Press 'i' to insert, 'c' to check, 'e' to clean expired, 'q' to quit".to_string(),
+        ],
+        input_mode: InputMode::Normal,
+    };
+
+    // Run the app
+    let res = run_app(&mut terminal, app);
+
+    // Restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    if let Err(err) = res {
+        println!("{:?}", err)
+    }
+
+    Ok(())
 }

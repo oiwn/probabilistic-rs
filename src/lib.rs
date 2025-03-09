@@ -36,8 +36,8 @@ mod inmemory_filter;
 #[cfg(feature = "redb")]
 mod redb_filter;
 mod storage;
-// #[cfg(feature = "cli")]
-// pub mod tui;
+#[cfg(feature = "cli")]
+pub mod tui;
 #[cfg(feature = "server")]
 pub mod types;
 
