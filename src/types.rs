@@ -33,7 +33,7 @@ pub struct ServerConfig {
     pub server_port: u16,
     #[builder(default = "\"bloom.redb\".to_string()")]
     pub bloom_db_path: String,
-    #[builder(default = "10000")]
+    #[builder(default = "1_000_000")]
     pub bloom_capacity: usize,
     #[builder(default = "0.01")]
     pub bloom_false_positive_rate: f64,

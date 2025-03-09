@@ -433,12 +433,12 @@ mod tests {
             .expect("Failed to create InMemorySlidingBloomFilter");
 
         let num_items = 1000;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut inserted_items = Vec::new();
 
         // Insert random items
         for _ in 0..num_items {
-            let item: Vec<u8> = (0..10).map(|_| rng.gen()).collect();
+            let item: Vec<u8> = (0..10).map(|_| rng.random()).collect();
             filter.insert(&item).unwrap();
             inserted_items.push(item);
         }
@@ -450,7 +450,7 @@ mod tests {
         filter.cleanup_expired_levels().unwrap();
 
         for _ in 0..num_tests {
-            let item: Vec<u8> = (0..10).map(|_| rng.gen()).collect();
+            let item: Vec<u8> = (0..10).map(|_| rng.random()).collect();
             if filter.query(&item).unwrap() {
                 // Check if the item was actually inserted
                 if !inserted_items.contains(&item) {

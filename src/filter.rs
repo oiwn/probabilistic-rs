@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::hash::{default_hash_function, HashFunction};
+use crate::hash::{HashFunction, default_hash_function};
 use derive_builder::Builder;
 use std::time::Duration;
 
@@ -8,7 +8,7 @@ use std::time::Duration;
 #[builder(pattern = "owned")]
 pub struct FilterConfig {
     /// Maximum number of elements the filter can hold
-    #[builder(default = "1000")]
+    #[builder(default = "1_000_000")]
     pub capacity: usize,
 
     /// Number of filter levels for time-based expiration

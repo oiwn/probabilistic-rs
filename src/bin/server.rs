@@ -1,7 +1,7 @@
 use expiring_bloom_rs::api::create_router;
 use expiring_bloom_rs::types::AppState;
 use expiring_bloom_rs::{FilterConfig, RedbSlidingBloomFilter, ServerConfig};
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use tracing::info;
 
 #[tokio::main]
@@ -14,20 +14,40 @@ async fn main() {
         .with_line_number(true)
         .init();
 
-    // load configuration from environment variables
+    // Load configuration from environment variables
     let server_config =
         ServerConfig::from_env().expect("Unable to load server config from env.");
-    let filter_config = FilterConfig::try_from(server_config.clone())
+
+    // Convert to FilterConfig for potential use
+    let env_filter_config = FilterConfig::try_from(server_config.clone())
         .expect("Unable to convert ServerConfig into FilterConfig");
 
     // Store the db path before config is moved
-    let db_path = server_config.bloom_db_path.clone();
+    let db_path: PathBuf = server_config.bloom_db_path.clone().into();
 
-    let filter = RedbSlidingBloomFilter::new(
-        filter_config.clone(),
-        server_config.bloom_db_path.into(),
-    )
-    .expect("Failed to create filter");
+    // Determine if database already exists
+    let db_exists = db_path.exists();
+
+    // Initialize the filter based on database existence
+    let filter = if db_exists {
+        // Database exists, load configuration from it
+        info!(
+            "Opening existing Bloom filter database: {}",
+            db_path.display()
+        );
+        RedbSlidingBloomFilter::new(None, db_path.clone())
+    } else {
+        // No database, create new one with config from environment
+        info!("Creating new Bloom filter database: {}", db_path.display());
+        RedbSlidingBloomFilter::new(
+            Some(env_filter_config.clone()),
+            db_path.clone(),
+        )
+    }
+    .expect("Failed to initialize Bloom filter");
+
+    // Get the actual configuration (from DB or env)
+    let active_config = filter.get_config().clone();
 
     // Create application state
     let state = Arc::new(AppState {
@@ -44,9 +64,9 @@ async fn main() {
     );
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
 
-    // Calculate the memory usage estimation
-    let bits_per_level = filter_config.capacity;
-    let total_bits = bits_per_level * filter_config.max_levels;
+    // Calculate the memory usage estimation based on the active configuration
+    let bits_per_level = active_config.capacity;
+    let total_bits = bits_per_level * active_config.max_levels;
     let estimated_memory_kb = (total_bits as f64 * 8.0 / 1024.0).ceil();
 
     info!(
@@ -79,12 +99,12 @@ async fn main() {
        
     🔧 Performance Mode: {}
     "#,
-        filter_config.capacity,
-        filter_config.false_positive_rate * 100.0,
-        filter_config.max_levels,
-        filter_config.level_duration,
+        active_config.capacity,
+        active_config.false_positive_rate * 100.0,
+        active_config.max_levels,
+        active_config.level_duration,
         estimated_memory_kb,
-        db_path,
+        db_path.display(),
         addr,
         addr,
         addr,

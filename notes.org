@@ -1,9 +1,10 @@
 #+title: Notes
 
 * Ideas
+** cli tool (clap)
+** TUI (to visualise data)
 ** No std?
-** TODO backend for redis using rustis
-** TODO backend for redb using redb crate
+** DONE backend for redb using redb crate
 ** TODO https://github.com/Cyan4973/xxHash - maybe check this hash?
 https://docs.rs/twox-hash/latest/twox_hash/
 ** TODO I think need one hash function

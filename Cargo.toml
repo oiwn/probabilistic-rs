@@ -1,7 +1,7 @@
 [package]
 name = "expiring-bloom-rs"
-version = "0.1.0"
-edition = "2021"
+version = "0.2.0"
+edition = "2024"
 authors = ["oiwn"]
 description = "A time-decaying Bloom filter implementation with multiple storage backends"
 repository = "https://github.com/oiwn/expiring-bloom-rs"
@@ -12,14 +12,16 @@ readme = "README.md"
 keywords = ["bloom-filter", "probabilistic", "time-decay", "cache", "rate-limiting"]
 categories = ["algorithms", "caching", "data-structures"]
 
+default-run = "expblf"
+
 [dependencies]
 bincode = "1"
-bitvec = "1"
 fnv = "1"
 murmur3 = "0.5"
 thiserror = "2"
-redb = { version = "2", optional = true }
 derive_builder = "0.20"
+tracing-subscriber = "0.3"
+tracing = "0.1"
 
 # server
 dotenvy = { version = "0.15", optional = true }
@@ -30,17 +32,25 @@ utoipa = { version = "5.3", features = ["axum_extras"], optional = true }
 utoipa-swagger-ui = { version = "9", features = ["axum"], optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
-tracing-subscriber = "0.3"
-tracing = "0.1"
+# cli
+clap = { version = "4.5.31", features = ["derive"], optional = true }
+ratatui = { version = "0.29.0", optional = true }
+# redb
+redb = { version = "2", optional = true }
 
 [dev-dependencies]
-rand = "0.8"
-expiring-bloom-rs = { path = ".", features = ["redb", "server"] }
+rand = "0.9"
+expiring-bloom-rs = { path = ".", features = ["redb", "server", "cli"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 tower = "0.5"
 
 [[bin]]
-name = "bloom-server"
+name = "expblf"
+path = "src/bin/cli.rs"
+required-features = ["redb", "cli"]
+
+[[bin]]
+name = "expblf-server"
 path = "src/bin/server.rs"
 required-features = ["server", "redb"]
 
@@ -49,9 +59,12 @@ no-default-features = true
 features = ["redb"]
 
 [features]
-default = ["redb", "server"]
+default = ["redb", "server", "cli"]
 redb = ["dep:redb"]
 server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde", "dep:serde_json", "dep:dotenvy", "dep:redb"]
+clap = ["dep:clap"]
+ratatui = ["dep:ratatui"]
+cli = ["dep:clap", "dep:ratatui", "redb"]
 
 [[bench]]
 name = "bloom_benchmarks"

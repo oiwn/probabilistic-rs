@@ -2,12 +2,12 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use expiring_bloom_rs::{
     FilterConfigBuilder, InMemorySlidingBloomFilter, SlidingBloomFilter,
 };
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, Rng};
 use std::{time::Duration, time::SystemTime};
 
 // Helper function to generate random string data
 fn generate_random_string(len: usize) -> String {
-    rand::thread_rng()
+    rand::rng()
         .sample_iter(&Alphanumeric)
         .take(len)
         .map(char::from)
