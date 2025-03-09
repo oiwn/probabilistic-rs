@@ -18,7 +18,7 @@ const TIMESTAMPS_TABLE: TableDefinition<u8, &[u8]> =
 const CONFIG_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("config");
 
 pub struct RedbSlidingBloomFilter {
-    storage: InMemoryStorage,
+    pub storage: InMemoryStorage,
     config: FilterConfig,
     num_hashes: usize,
     current_level_index: usize,
@@ -86,27 +86,6 @@ impl RedbSlidingBloomFilter {
         filter.load_state()?;
         Ok(filter)
     }
-
-    /* pub fn new(config: FilterConfig, db_path: PathBuf) -> Result<Self> {
-        let db = Arc::new(Database::create(&db_path).map_err(redb::Error::from)?);
-        // let loaded_config = Self::load_config(&db).unwrap_or(config);
-        let storage = InMemoryStorage::new(config.capacity, config.max_levels)?;
-        let bit_vector_size =
-            optimal_bit_vector_size(config.capacity, config.false_positive_rate);
-        let num_hashes = optimal_num_hashes(config.capacity, bit_vector_size);
-
-        // Try to load existing state or initialize new one
-        let mut filter = Self {
-            storage,
-            config,
-            num_hashes,
-            current_level_index: 0,
-            db,
-        };
-
-        filter.load_state()?;
-        Ok(filter)
-    } */
 
     pub fn get_config(&self) -> &FilterConfig {
         &self.config

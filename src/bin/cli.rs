@@ -254,6 +254,7 @@ pub fn run_tui(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     // Create app state
     let filter = RedbSlidingBloomFilter::new(None, db_path.to_path_buf())?;
+
     let app = App {
         filter,
         input: String::new(),
@@ -265,6 +266,9 @@ pub fn run_tui(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             msg_type: MessageType::Info,
         }],
         input_mode: InputMode::Normal,
+        current_view_level: 0, // Start at level 0
+        view_offset: 0,        // Start at beginning of bit array
+        bits_per_row: 64,      // Default 64 bits per row
     };
 
     // Run the app
