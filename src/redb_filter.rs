@@ -95,74 +95,6 @@ impl RedbSlidingBloomFilter {
         self.current_level_index
     }
 
-    /* fn save_config(db: &Arc<Database>, config: &FilterConfig) -> Result<()> {
-        let write_txn = db.begin_write().map_err(redb::Error::from)?;
-        {
-            let mut config_table = write_txn
-                .open_table(CONFIG_TABLE)
-                .map_err(redb::Error::from)?;
-
-            // Serialize important config fields
-            let serialized = bincode::serialize(&(
-                config.capacity,
-                config.false_positive_rate,
-                config.max_levels,
-                config.level_duration,
-            ))
-            .map_err(|e| BloomError::SerializationError(e.to_string()))?;
-
-            // Store in database
-            config_table
-                .insert("filter_config", serialized.as_slice())
-                .map_err(redb::Error::from)?;
-
-            // `config_table` goes out of scope here and is dropped
-        }
-
-        // Now it's safe to commit
-        write_txn.commit().map_err(redb::Error::from)?;
-
-        Ok(())
-    }
-
-    fn load_config(db: &Arc<Database>) -> Result<FilterConfig> {
-        let read_txn = db.begin_read().map_err(redb::Error::from)?;
-
-        // Try to open config table
-        let config_table = read_txn
-            .open_table(CONFIG_TABLE)
-            .map_err(redb::Error::from)?;
-
-        // Try to get config
-        if let Some(config_bytes) = config_table
-            .get("filter_config")
-            .map_err(redb::Error::from)?
-        {
-            // Deserialize config
-            let (capacity, false_positive_rate, max_levels, level_duration): (
-                usize,
-                f64,
-                usize,
-                Duration,
-            ) = bincode::deserialize(config_bytes.value())
-                .map_err(|e| BloomError::SerializationError(e.to_string()))?;
-
-            // Rebuild config with default hash function
-            Ok(FilterConfig {
-                capacity,
-                false_positive_rate,
-                max_levels,
-                level_duration,
-                hash_function: default_hash_function,
-            })
-        } else {
-            // No config found, return error
-            Err(BloomError::StorageError(
-                "No configuration found in database".to_string(),
-            ))
-        }
-    } */
-
     /// Loads filter configuration from the database
     fn load_config(db: &Arc<Database>) -> Result<Option<FilterConfig>> {
         let read_txn = db.begin_read().map_err(redb::Error::from)?;
@@ -339,6 +271,7 @@ impl SlidingBloomFilter for RedbSlidingBloomFilter {
         .collect();
 
         self.storage.set_bits(self.current_level_index, &indices)?;
+        // TODO: run separate thread for it
         self.save_snapshot()?;
         Ok(())
     }

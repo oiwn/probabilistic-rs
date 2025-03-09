@@ -7,7 +7,7 @@
 
 # Time-Decaying Bloom Filter
 
-A Rust implementation of a time-decaying Bloom filter with multiple storage
+A Rust implementation of a **time-decaying Bloom filter** with multiple storage
 backends and a high-performance HTTP API server.
 
 ## Overview
@@ -17,15 +17,20 @@ elements after a configurable time period using a sliding window approach. It's
 particularly useful for rate limiting, caching, and tracking recently seen items
 where older data becomes less relevant over time.
 
+![TUI Screenshot](tui.png)
+
 ### Key Features
 
-- Time-based automatic element expiration
-- Multiple storage backends (In-memory and ReDB persistence)
-- Configurable false positive rate
-- Multi-level sliding window design
-- High-performance HTTP API server with Swagger UI
-- Comprehensive benchmarking suite
-- Thread-safe concurrent operations
+- **Time-based automatic element expiration** - items naturally age out without manual intervention
+- **Multiple storage backends**:
+  - In-memory for maximum performance
+  - ReDB persistence for durability across restarts
+- **Configurable false positive rate** - tune memory usage vs. accuracy tradeoffs
+- **Multi-level sliding window design** with timestamp-based expiration
+- **Complete API ecosystem**:
+  - HTTP server with Swagger UI documentation
+  - CLI with interactive TUI mode
+  - Programmatic Rust API
 
 ## How It Works
 
@@ -48,7 +53,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-expiring-bloom-rs = "0.1"
+expiring-bloom-rs = "0.2"
 ```
 
 ### Basic Example
@@ -72,6 +77,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Insert and query items
     filter.insert(b"test_item")?;
     assert!(filter.query(b"test_item")?);
+    
+    Ok(())
+}
+```
+
+### Persistent Filter with ReDB
+
+```rust
+use expiring_bloom_rs::{FilterConfigBuilder, RedbSlidingBloomFilter, SlidingBloomFilter};
+use std::{path::PathBuf, time::Duration};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = FilterConfigBuilder::default()
+        .capacity(10000)
+        .false_positive_rate(0.01)
+        .level_duration(Duration::from_secs(60))
+        .max_levels(5)
+        .build()?;
+
+    // Filter state persists across program restarts
+    let mut filter = RedbSlidingBloomFilter::new(
+        Some(config), 
+        PathBuf::from("bloom_database.redb")
+    )?;
+    
+    filter.insert(b"persistent_item")?;
+    
+    // Later or in another process:
+    // let filter = RedbSlidingBloomFilter::new(None, PathBuf::from("bloom_database.redb"))?;
+    // filter.query(b"persistent_item")?; // Returns true if not expired
     
     Ok(())
 }
@@ -103,6 +138,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Command line interface
+
+The crate includes a command-line interface with both command mode and an interactive TUI:
+
+```bash
+# Create a new filter
+expblf create --db-path myfilter.redb --capacity 10000 --fpr 0.01
+
+# Insert an element
+expblf load --db-path myfilter.redb insert --element "example-key"
+
+# Check if an element exists
+expblf load --db-path myfilter.redb check --element "example-key"
+
+# Start interactive TUI
+expblf tui --db-path myfilter.redb
+```
+
 ## API Endpoints
 
 The HTTP server provides the following REST endpoints:
@@ -113,14 +166,19 @@ The HTTP server provides the following REST endpoints:
 - `POST /cleanup` - Manually trigger cleanup of expired items
 - `/swagger-ui` - Interactive API documentation
 
-## Configuration
+
+## Configuration Options
 
 The filter can be configured with the following parameters:
 
-- `capacity`: Maximum number of elements (default: 1000)
-- `false_positive_rate`: Desired false positive rate (default: 0.01)
-- `level_duration`: Duration after which entries in a level expire (default: 60s)
-- `max_levels`: Number of filter levels for time-based expiration (default: 3)
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `capacity` | Maximum number of elements | 1,000,000 |
+| `false_positive_rate` | Desired false positive rate | 0.01 (1%) |
+| `level_duration` | Duration before level rotation | 60 seconds |
+| `max_levels` | Number of filter levels | 3 |
+| `hash_function` | Custom hash function | Combined FNV-1a/Murmur3 |
+
 
 ## Performance
 
