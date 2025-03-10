@@ -1,6 +1,6 @@
 [package]
 name = "expiring-bloom-rs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 authors = ["oiwn"]
 description = "A time-decaying Bloom filter implementation with multiple storage backends"
@@ -70,4 +70,8 @@ cli = ["dep:clap", "dep:ratatui", "dep:unicode-width", "redb"]
 
 [[bench]]
 name = "bloom_benchmarks"
+harness = false
+
+[[bench]]
+name = "snapshot_benchmarks"
 harness = false

@@ -1,6 +1,8 @@
 use expiring_bloom_rs::api::create_router;
 use expiring_bloom_rs::types::AppState;
-use expiring_bloom_rs::{FilterConfig, RedbSlidingBloomFilter, ServerConfig};
+use expiring_bloom_rs::{
+    FilterConfig, RedbFilter, RedbFilterConfigBuilder, ServerConfig,
+};
 use std::{path::PathBuf, sync::Arc};
 use tracing::info;
 
@@ -35,14 +37,24 @@ async fn main() {
             "Opening existing Bloom filter database: {}",
             db_path.display()
         );
-        RedbSlidingBloomFilter::new(None, db_path.clone())
+
+        let redb_config = RedbFilterConfigBuilder::default()
+            .db_path(db_path.clone())
+            .snapshot_interval(std::time::Duration::from_secs(60))
+            .build()
+            .expect("Failed to create RedbFilterConfig");
+        RedbFilter::new(redb_config)
     } else {
         // No database, create new one with config from environment
         info!("Creating new Bloom filter database: {}", db_path.display());
-        RedbSlidingBloomFilter::new(
-            Some(env_filter_config.clone()),
-            db_path.clone(),
-        )
+        let redb_config = RedbFilterConfigBuilder::default()
+            .db_path(db_path.clone())
+            .filter_config(Some(env_filter_config.clone()))
+            .snapshot_interval(std::time::Duration::from_secs(60))
+            .build()
+            .expect("Failed to create RedbFilterConfig");
+
+        RedbFilter::new(redb_config)
     }
     .expect("Failed to initialize Bloom filter");
 
