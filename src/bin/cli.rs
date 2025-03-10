@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use expiring_bloom_rs::{
-    FilterConfigBuilder, RedbSlidingBloomFilter, SlidingBloomFilter,
+    FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder, SlidingBloomFilter,
     optimal_bit_vector_size, optimal_num_hashes,
     tui::{App, AppMessage, InputMode, MessageType, run_app},
 };
@@ -132,9 +132,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build()
                 .expect("Failed to build filter config");
 
-            // Create the database and store the configuration
-            let _filter =
-                RedbSlidingBloomFilter::new(Some(config), db_path.clone())?;
+            // Create the RedbFilterConfig
+            let redb_config = RedbFilterConfigBuilder::default()
+                .db_path(db_path.clone())
+                .filter_config(Some(config))
+                .snapshot_interval(Duration::from_secs(60))
+                .build()
+                .expect("Failed to build RedbFilterConfig");
+
+            let _filter = RedbFilter::new(redb_config)?;
 
             println!(
                 "Created new Bloom filter database at {}",
@@ -164,8 +170,15 @@ fn handle_load_command(
     db_path: PathBuf,
     operation: &LoadCommands,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // We don't need to provide a config when loading an existing database
-    let mut filter = RedbSlidingBloomFilter::new(None, db_path.clone())?;
+    // Create RedbFilterConfig for an existing database
+    let redb_config = RedbFilterConfigBuilder::default()
+        .db_path(db_path.clone())
+        .snapshot_interval(Duration::from_secs(60))
+        .build()
+        .expect("Failed to build RedbFilterConfig");
+
+    // Create the filter
+    let mut filter = RedbFilter::new(redb_config)?;
 
     match operation {
         LoadCommands::Insert { element } => {
@@ -252,8 +265,15 @@ pub fn run_tui(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // Create the RedbFilterConfig
+    let redb_config = RedbFilterConfigBuilder::default()
+        .db_path(db_path.to_path_buf())
+        .snapshot_interval(Duration::from_secs(60))
+        .build()
+        .expect("Failed to build RedbFilterConfig");
+
     // Create app state
-    let filter = RedbSlidingBloomFilter::new(None, db_path.to_path_buf())?;
+    let filter = RedbFilter::new(redb_config)?;
 
     let app = App {
         filter,

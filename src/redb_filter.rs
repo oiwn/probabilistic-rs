@@ -1,15 +1,20 @@
-use crate::error::{BloomError, Result};
-use crate::filter::{FilterConfig, SlidingBloomFilter};
-use crate::hash::{
-    default_hash_function, optimal_bit_vector_size, optimal_num_hashes,
+use crate::{
+    error::{BloomError, Result},
+    filter::{FilterConfig, SlidingBloomFilter},
+    hash::{default_hash_function, optimal_bit_vector_size, optimal_num_hashes},
+    storage::{BloomStorage, InMemoryStorage},
 };
-use crate::storage::{BloomStorage, InMemoryStorage};
+use derive_builder::Builder;
 use redb::{Database, TableDefinition};
 use std::{
     path::PathBuf,
-    sync::Arc,
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
     time::{Duration, SystemTime},
 };
+use tracing::error;
 
 // Define table schemas for ReDB
 const BITS_TABLE: TableDefinition<u8, &[u8]> = TableDefinition::new("bits");
@@ -17,15 +22,32 @@ const TIMESTAMPS_TABLE: TableDefinition<u8, &[u8]> =
     TableDefinition::new("timestamps");
 const CONFIG_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("config");
 
-pub struct RedbSlidingBloomFilter {
+#[derive(Builder, Clone)]
+#[builder(pattern = "owned")]
+pub struct RedbFilterConfig {
+    #[builder(default = "PathBuf::from(\"bloom.redb\")")]
+    pub db_path: PathBuf,
+    #[builder(default = "None")]
+    pub filter_config: Option<FilterConfig>,
+    #[builder(default = "Duration::from_secs(60)")]
+    pub snapshot_interval: Duration,
+}
+
+pub struct RedbFilter {
     pub storage: InMemoryStorage,
     config: FilterConfig,
     num_hashes: usize,
-    current_level_index: usize,
+    current_level_index: AtomicUsize,
     db: Arc<Database>,
+    // trhreading
+    dirty: Arc<AtomicBool>,
+    // shutdown: Arc<AtomicBool>,
+    // snapshot_thread: Option<JoinHandle<()>>,
+    snapshot_interval: Duration,
+    last_snapshot: RwLock<SystemTime>, // Track last snapshot time
 }
 
-impl RedbSlidingBloomFilter {
+impl RedbFilter {
     /// Creates a new or opens an existing RedbSlidingBloomFilter.
     ///
     /// If the database file already exists, it loads the configuration from
@@ -33,14 +55,17 @@ impl RedbSlidingBloomFilter {
     ///
     /// If the database file doesn't exist, it creates a new one with the provided
     /// configuration, which must be Some.
-    pub fn new(config: Option<FilterConfig>, db_path: PathBuf) -> Result<Self> {
-        let db_exists = db_path.exists();
+    ///
+    /// Run parallel threads to drop snapshots into the redb and cleanup levels
+    pub fn new(config: RedbFilterConfig) -> Result<Self> {
+        let db_exists = config.db_path.exists();
 
         // Handle configuration based on database existence
-        let config = if db_exists {
+        let (filter_config, db) = if db_exists {
             // Database exists, try to load configuration
-            let db =
-                Arc::new(Database::open(&db_path).map_err(redb::Error::from)?);
+            let db = Arc::new(
+                Database::open(&config.db_path).map_err(redb::Error::from)?,
+            );
             match Self::load_config(&db)? {
                 Some(loaded_config) => (loaded_config, db),
                 None => {
@@ -51,39 +76,57 @@ impl RedbSlidingBloomFilter {
             }
         } else {
             // Database doesn't exist, require configuration
-            let config = config.ok_or_else(|| {
+            let filter_config = config.filter_config.ok_or_else(|| {
                 BloomError::InvalidConfig(
                     "Configuration required for new database".to_string(),
                 )
             })?;
 
             // Create new database
-            let db =
-                Arc::new(Database::create(&db_path).map_err(redb::Error::from)?);
+            let db = Arc::new(
+                Database::create(&config.db_path).map_err(redb::Error::from)?,
+            );
 
             // Save configuration
-            Self::save_config(&db, &config)?;
+            Self::save_config(&db, &filter_config)?;
 
-            (config, db)
+            (filter_config, db)
         };
 
-        let (config, db) = config;
+        let storage = InMemoryStorage::new(
+            filter_config.capacity,
+            filter_config.max_levels,
+        )?;
+        let bit_vector_size = optimal_bit_vector_size(
+            filter_config.capacity,
+            filter_config.false_positive_rate,
+        );
+        let num_hashes =
+            optimal_num_hashes(filter_config.capacity, bit_vector_size);
 
-        let storage = InMemoryStorage::new(config.capacity, config.max_levels)?;
-        let bit_vector_size =
-            optimal_bit_vector_size(config.capacity, config.false_positive_rate);
-        let num_hashes = optimal_num_hashes(config.capacity, bit_vector_size);
+        // State for background thread coordination
+        // let shutdown = Arc::new(AtomicBool::new(false));
+        let dirty = Arc::new(AtomicBool::new(false));
 
-        // Initialize filter
+        // Create the filter instance first (without threads)
         let mut filter = Self {
             storage,
-            config,
+            config: filter_config,
             num_hashes,
-            current_level_index: 0,
-            db,
+            current_level_index: AtomicUsize::new(0),
+            db: db.clone(),
+            dirty: dirty.clone(),
+            // shutdown: shutdown.clone(),
+            // snapshot_thread: None,
+            snapshot_interval: config.snapshot_interval,
+            last_snapshot: RwLock::new(SystemTime::now()),
         };
 
+        // Load saved state from DB
         filter.load_state()?;
+
+        // TODO: in future need to do thread here
+
         Ok(filter)
     }
 
@@ -92,7 +135,7 @@ impl RedbSlidingBloomFilter {
     }
 
     pub fn get_current_level_index(&self) -> usize {
-        self.current_level_index
+        self.current_level_index.load(Ordering::Relaxed)
     }
 
     /// Loads filter configuration from the database
@@ -235,7 +278,7 @@ impl RedbSlidingBloomFilter {
     }
 
     fn should_create_new_level(&self) -> Result<bool> {
-        let current_level = self.current_level_index;
+        let current_level = self.current_level_index.load(Ordering::Relaxed);
         if let Some(last_timestamp) = self.storage.get_timestamp(current_level)? {
             let now = SystemTime::now();
             Ok(now.duration_since(last_timestamp)? >= self.config.level_duration)
@@ -245,17 +288,18 @@ impl RedbSlidingBloomFilter {
     }
 
     fn create_new_level(&mut self) -> Result<()> {
-        self.current_level_index =
-            (self.current_level_index + 1) % self.config.max_levels;
-        self.storage.clear_level(self.current_level_index)?;
-        self.storage
-            .set_timestamp(self.current_level_index, SystemTime::now())?;
-        self.save_snapshot()?;
+        let current = self.current_level_index.load(Ordering::Relaxed);
+        let new_index = (current + 1) % self.config.max_levels;
+        self.current_level_index.store(new_index, Ordering::Relaxed);
+
+        self.storage.clear_level(new_index)?;
+        self.storage.set_timestamp(new_index, SystemTime::now())?;
+        self.dirty.store(true, Ordering::Relaxed);
         Ok(())
     }
 }
 
-impl SlidingBloomFilter for RedbSlidingBloomFilter {
+impl SlidingBloomFilter for RedbFilter {
     fn insert(&mut self, item: &[u8]) -> Result<()> {
         if self.should_create_new_level()? {
             self.create_new_level()?;
@@ -270,9 +314,25 @@ impl SlidingBloomFilter for RedbSlidingBloomFilter {
         .map(|h| h as usize)
         .collect();
 
-        self.storage.set_bits(self.current_level_index, &indices)?;
-        // TODO: run separate thread for it
-        self.save_snapshot()?;
+        // Set bits at current level
+        let current_level = self.current_level_index.load(Ordering::Relaxed);
+        self.storage.set_bits(current_level, &indices)?;
+
+        // Signal thread to shut down
+        self.dirty.store(true, Ordering::Relaxed);
+        // Snapshot logic
+        let now = SystemTime::now();
+        {
+            let last_snapshot = self.last_snapshot.read().unwrap();
+            if now.duration_since(*last_snapshot)? >= self.snapshot_interval {
+                drop(last_snapshot); // release read lock
+                let mut last_snapshot = self.last_snapshot.write().unwrap();
+                self.save_snapshot()?;
+                *last_snapshot = now;
+                self.dirty.store(false, Ordering::Relaxed);
+            }
+        }
+
         Ok(())
     }
 
@@ -323,9 +383,15 @@ impl SlidingBloomFilter for RedbSlidingBloomFilter {
     }
 }
 
-impl Drop for RedbSlidingBloomFilter {
+impl Drop for RedbFilter {
     fn drop(&mut self) {
-        // Take final snapshot on drop
-        let _ = self.save_snapshot();
+        // TODO: here will need to shutdown parallel thread
+
+        // Take final snapshot on drop if dirty
+        if self.dirty.load(Ordering::Relaxed) {
+            if let Err(err) = self.save_snapshot() {
+                error!("Error saving snapshot: {}", err);
+            }
+        }
     }
 }

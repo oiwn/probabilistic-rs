@@ -52,7 +52,7 @@ pub use hash::{
 };
 pub use inmemory_filter::InMemorySlidingBloomFilter;
 #[cfg(feature = "redb")]
-pub use redb_filter::RedbSlidingBloomFilter;
+pub use redb_filter::{RedbFilter, RedbFilterConfig, RedbFilterConfigBuilder};
 pub use storage::{BloomStorage, InMemoryStorage};
 #[cfg(feature = "server")]
 pub use types::{

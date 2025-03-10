@@ -7,7 +7,7 @@ mod tests {
     };
     use expiring_bloom_rs::api::create_router;
     use expiring_bloom_rs::{
-        AppState, FilterConfigBuilder, RedbSlidingBloomFilter,
+        AppState, FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder,
         ServerConfigBuilder,
     };
     use serde_json::json;
@@ -22,7 +22,7 @@ mod tests {
             .bloom_db_path(format!("test_bloom_{}.redb", random::<u64>()))
             .build()
             .unwrap();
-        let config = FilterConfigBuilder::default()
+        let filter_config = FilterConfigBuilder::default()
             .capacity(100)
             .false_positive_rate(0.01)
             .level_duration(Duration::from_secs(1))
@@ -30,11 +30,16 @@ mod tests {
             .build()
             .unwrap();
 
-        let filter = RedbSlidingBloomFilter::new(
-            Some(config),
-            test_config.bloom_db_path.into(),
-        )
-        .unwrap();
+        // Create RedbFilterConfig using the builder
+        let redb_config = RedbFilterConfigBuilder::default()
+            .db_path(test_config.bloom_db_path.into())
+            .filter_config(Some(filter_config))
+            .snapshot_interval(Duration::from_secs(10))
+            .build()
+            .unwrap();
+
+        let filter = RedbFilter::new(redb_config).unwrap();
+
         let state = Arc::new(AppState {
             filter: tokio::sync::Mutex::new(filter),
         });

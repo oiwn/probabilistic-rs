@@ -1,4 +1,4 @@
-use crate::{BloomError, FilterConfig, RedbSlidingBloomFilter, Result};
+use crate::{BloomError, FilterConfig, RedbFilter, Result};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -21,7 +21,7 @@ pub struct ErrorResponse {
 }
 
 pub struct AppState {
-    pub filter: Mutex<RedbSlidingBloomFilter>,
+    pub filter: Mutex<RedbFilter>,
 }
 
 #[derive(Builder, Clone)]

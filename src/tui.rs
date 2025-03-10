@@ -1,4 +1,4 @@
-use crate::{RedbSlidingBloomFilter, SlidingBloomFilter};
+use crate::{RedbFilter, SlidingBloomFilter};
 use ratatui::{
     Frame, Terminal,
     backend::Backend,
@@ -29,7 +29,7 @@ pub struct AppMessage {
 }
 
 pub struct App {
-    pub filter: RedbSlidingBloomFilter,
+    pub filter: RedbFilter,
     pub input: String,
     pub messages: Vec<AppMessage>,
     pub input_mode: InputMode,

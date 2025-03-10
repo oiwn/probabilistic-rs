@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use expiring_bloom_rs::FilterConfigBuilder;
-    use expiring_bloom_rs::RedbSlidingBloomFilter;
     use expiring_bloom_rs::SlidingBloomFilter;
+    use expiring_bloom_rs::{RedbFilter, RedbFilterConfigBuilder};
     use std::{fs, path::PathBuf, thread, time::Duration};
 
     fn temp_db_path() -> PathBuf {
@@ -26,8 +26,15 @@ mod tests {
             .build()
             .unwrap();
 
-        let mut filter =
-            RedbSlidingBloomFilter::new(Some(config), path.clone()).unwrap();
+        // Create the RedbFilterConfig
+        let redb_config = RedbFilterConfigBuilder::default()
+            .db_path(path.clone())
+            .filter_config(Some(config))
+            .snapshot_interval(Duration::from_secs(60))
+            .build()
+            .expect("Failed to build RedbFilterConfig");
+
+        let mut filter = RedbFilter::new(redb_config).unwrap();
 
         // Test insert and query
         filter.insert(b"test1").unwrap();
@@ -49,19 +56,25 @@ mod tests {
             .build()
             .unwrap();
 
+        let redb_config = RedbFilterConfigBuilder::default()
+            .db_path(path.clone())
+            .filter_config(Some(config.clone()))
+            .snapshot_interval(Duration::from_secs(60))
+            .build()
+            .expect("Failed to build RedbFilterConfig");
+
         // Insert data with first instance
         {
-            let mut filter =
-                RedbSlidingBloomFilter::new(Some(config.clone()), path.clone())
-                    .unwrap();
+            let mut filter = RedbFilter::new(redb_config.clone()).unwrap();
             filter.insert(b"persist_test").unwrap();
             assert!(filter.query(b"persist_test").unwrap());
         }
 
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
         // Verify data with second instance
         {
-            let filter =
-                RedbSlidingBloomFilter::new(Some(config), path.clone()).unwrap();
+            let filter = RedbFilter::new(redb_config).unwrap();
             assert!(filter.query(b"persist_test").unwrap());
         }
 
@@ -79,8 +92,14 @@ mod tests {
             .build()
             .unwrap();
 
-        let mut filter =
-            RedbSlidingBloomFilter::new(Some(config), path.clone()).unwrap();
+        let redb_config = RedbFilterConfigBuilder::default()
+            .db_path(path.clone())
+            .filter_config(Some(config.clone()))
+            .snapshot_interval(Duration::from_secs(60))
+            .build()
+            .expect("Failed to build RedbFilterConfig");
+
+        let mut filter = RedbFilter::new(redb_config).unwrap();
 
         filter.insert(b"expire_test").unwrap();
         assert!(filter.query(b"expire_test").unwrap());
