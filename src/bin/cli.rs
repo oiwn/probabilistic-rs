@@ -50,7 +50,7 @@ enum Commands {
         levels: usize,
 
         /// Level duration in seconds
-        #[arg(short, long, default_value = "60")]
+        #[arg(long, default_value = "60")]
         duration: u64,
     },
 

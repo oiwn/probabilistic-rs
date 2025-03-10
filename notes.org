@@ -1,9 +1,9 @@
 #+title: Notes
 
 * Ideas
-** cli tool (clap)
-** TUI (to visualise data)
-** No std?
+** probably less storage size for redb would mean better performance, i.e. need to use bitvec
+** DONE cli tool (clap)
+** DONE TUI (to visualise data)
 ** DONE backend for redb using redb crate
 ** TODO https://github.com/Cyan4973/xxHash - maybe check this hash?
 https://docs.rs/twox-hash/latest/twox_hash/

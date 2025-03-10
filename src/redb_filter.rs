@@ -237,7 +237,7 @@ impl RedbFilter {
         Ok(())
     }
 
-    fn save_snapshot(&self) -> Result<()> {
+    pub fn save_snapshot(&self) -> Result<()> {
         let write_txn = self.db.begin_write().map_err(redb::Error::from)?;
 
         // Save bits
