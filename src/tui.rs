@@ -258,7 +258,7 @@ fn ui(f: &mut Frame, app: &App) {
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(
-            [Constraint::Percentage(30), Constraint::Percentage(70)].as_ref(),
+            [Constraint::Percentage(50), Constraint::Percentage(50)].as_ref(),
         )
         .margin(1)
         .split(f.area());

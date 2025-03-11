@@ -154,13 +154,25 @@ impl RedbFilter {
             .map_err(redb::Error::from)?
         {
             // Deserialize config
+            // let (capacity, false_positive_rate, max_levels, level_duration): (
+            //     usize,
+            //     f64,
+            //     usize,
+            //     Duration,
+            // ) = bincode::deserialize(config_bytes.value())
+            //     .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+
             let (capacity, false_positive_rate, max_levels, level_duration): (
                 usize,
                 f64,
                 usize,
                 Duration,
-            ) = bincode::deserialize(config_bytes.value())
-                .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+            ) = bincode::decode_from_slice(
+                config_bytes.value(),
+                bincode::config::standard(),
+            )
+            .map_err(|e| BloomError::SerializationError(e.to_string()))?
+            .0;
 
             // Rebuild config with default hash function
             Ok(Some(FilterConfig {
@@ -186,12 +198,22 @@ impl RedbFilter {
                 .map_err(redb::Error::from)?;
 
             // Serialize important config fields
-            let serialized = bincode::serialize(&(
-                config.capacity,
-                config.false_positive_rate,
-                config.max_levels,
-                config.level_duration,
-            ))
+            // let serialized = bincode::serialize(&(
+            //     config.capacity,
+            //     config.false_positive_rate,
+            //     config.max_levels,
+            //     config.level_duration,
+            // ))
+            // .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+            let serialized = bincode::encode_to_vec(
+                &(
+                    config.capacity,
+                    config.false_positive_rate,
+                    config.max_levels,
+                    config.level_duration,
+                ),
+                bincode::config::standard(),
+            )
             .map_err(|e| BloomError::SerializationError(e.to_string()))?;
 
             // Store in database
@@ -226,10 +248,19 @@ impl RedbFilter {
             for level in 0..self.config.max_levels {
                 let level_u8 = level as u8;
                 if let Ok(Some(ts_bytes)) = timestamps_table.get(&level_u8) {
-                    if let Ok(duration) = bincode::deserialize(ts_bytes.value()) {
+                    if let Ok((duration, _)) =
+                        bincode::decode_from_slice::<Duration, _>(
+                            ts_bytes.value(),
+                            bincode::config::standard(),
+                        )
+                    {
                         self.storage.timestamps[level] =
                             SystemTime::UNIX_EPOCH + duration;
                     }
+                    // if let Ok(duration) = bincode::deserialize(ts_bytes.value()) {
+                    //     self.storage.timestamps[level] =
+                    //         SystemTime::UNIX_EPOCH + duration;
+                    // }
                 }
             }
         }
@@ -265,8 +296,13 @@ impl RedbFilter {
             {
                 let duration =
                     timestamp.duration_since(SystemTime::UNIX_EPOCH)?;
-                let ts_bytes = bincode::serialize(&duration)
-                    .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+                let ts_bytes =
+                    bincode::encode_to_vec(duration, bincode::config::standard())
+                        .map_err(|e| {
+                            BloomError::SerializationError(e.to_string())
+                        })?;
+                // let ts_bytes = bincode::serialize(&duration)
+                //     .map_err(|e| BloomError::SerializationError(e.to_string()))?;
                 timestamps_table
                     .insert(&(level as u8), ts_bytes.as_slice())
                     .map_err(redb::Error::from)?;

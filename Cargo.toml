@@ -1,6 +1,6 @@
 [package]
 name = "expiring-bloom-rs"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 authors = ["oiwn"]
 description = "A time-decaying Bloom filter implementation with multiple storage backends"
@@ -15,7 +15,7 @@ categories = ["algorithms", "caching", "data-structures"]
 default-run = "expblf"
 
 [dependencies]
-bincode = "1"  # TODO: upgrade to v2
+bincode = "2"
 fnv = "1"
 murmur3 = "0.5"
 thiserror = "2"
@@ -44,6 +44,7 @@ rand = "0.9"
 expiring-bloom-rs = { path = ".", features = ["redb", "server", "cli"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 tower = "0.5"
+comfy-table = "7.1.4"
 
 [[bin]]
 name = "expblf"
