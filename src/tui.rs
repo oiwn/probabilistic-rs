@@ -253,7 +253,7 @@ pub fn run_app<B: Backend>(
     }
 }
 
-fn ui(f: &mut Frame, app: &App) {
+pub fn ui(f: &mut Frame, app: &App) {
     // Create a layout with a main horizontal split
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)

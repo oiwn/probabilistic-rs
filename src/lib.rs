@@ -41,7 +41,7 @@ pub mod tui;
 #[cfg(feature = "server")]
 pub mod types;
 
-pub use error::{BloomError, Result};
+pub use error::{FilterError, Result};
 pub use filter::{
     FilterConfig, FilterConfigBuilder, FilterConfigBuilderError,
     SlidingBloomFilter,
@@ -50,7 +50,7 @@ pub use hash::{
     HashFunction, default_hash_function, optimal_bit_vector_size,
     optimal_num_hashes,
 };
-pub use inmemory_filter::InMemorySlidingBloomFilter;
+pub use inmemory_filter::InMemoryFilter;
 #[cfg(feature = "redb")]
 pub use redb_filter::{RedbFilter, RedbFilterConfig, RedbFilterConfigBuilder};
 pub use storage::{BloomStorage, InMemoryStorage};

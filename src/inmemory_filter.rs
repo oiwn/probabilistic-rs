@@ -1,18 +1,18 @@
-use crate::error::{BloomError, Result};
+use crate::error::{FilterError, Result};
 use crate::filter::{FilterConfig, SlidingBloomFilter};
 use crate::hash::{optimal_bit_vector_size, optimal_num_hashes};
 use crate::storage::{BloomStorage, InMemoryStorage};
 use std::time::SystemTime;
 
 // Base filter implementation
-pub struct InMemorySlidingBloomFilter {
+pub struct InMemoryFilter {
     pub storage: InMemoryStorage,
     pub config: FilterConfig,
     pub num_hashes: usize,
     pub current_level_index: usize,
 }
 
-impl InMemorySlidingBloomFilter {
+impl InMemoryFilter {
     pub fn new(config: FilterConfig) -> Result<Self> {
         let storage = InMemoryStorage::new(config.capacity, config.max_levels)?;
         let bit_vector_size =
@@ -33,7 +33,7 @@ impl InMemorySlidingBloomFilter {
             let now = SystemTime::now();
             Ok(now
                 .duration_since(last_timestamp)
-                .map_err(|e| BloomError::StorageError(e.to_string()))?
+                .map_err(|e| FilterError::StorageError(e.to_string()))?
                 >= self.config.level_duration)
         } else {
             Ok(true)
@@ -53,7 +53,7 @@ impl InMemorySlidingBloomFilter {
     }
 }
 
-impl SlidingBloomFilter for InMemorySlidingBloomFilter {
+impl SlidingBloomFilter for InMemoryFilter {
     fn insert(&mut self, item: &[u8]) -> Result<()> {
         if self.should_create_new_level()? {
             self.create_new_level()?;
@@ -89,7 +89,7 @@ impl SlidingBloomFilter for InMemorySlidingBloomFilter {
             if let Some(timestamp) = self.storage.get_timestamp(level)? {
                 let elapsed = now
                     .duration_since(timestamp)
-                    .map_err(|e| BloomError::StorageError(e.to_string()))?;
+                    .map_err(|e| FilterError::StorageError(e.to_string()))?;
 
                 if elapsed
                     <= self.config.level_duration * self.config.max_levels as u32
@@ -111,7 +111,7 @@ impl SlidingBloomFilter for InMemorySlidingBloomFilter {
             if let Some(timestamp) = self.storage.get_timestamp(level)? {
                 if now
                     .duration_since(timestamp)
-                    .map_err(|e| BloomError::StorageError(e.to_string()))?
+                    .map_err(|e| FilterError::StorageError(e.to_string()))?
                     >= self.config.level_duration * self.config.max_levels as u32
                 {
                     self.storage.clear_level(level)?;
@@ -122,11 +122,11 @@ impl SlidingBloomFilter for InMemorySlidingBloomFilter {
     }
 }
 
-impl std::fmt::Debug for InMemorySlidingBloomFilter {
+impl std::fmt::Debug for InMemoryFilter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "InMemorySlidingBloomFilter {{ capacity: {}, num_hashes: {}, false_positive_rate: {}, level_time: {:?}, max_levels: {} }}",
+            "InMemoryFilter {{ capacity: {}, num_hashes: {}, false_positive_rate: {}, level_time: {:?}, max_levels: {} }}",
             self.config.capacity,
             self.num_hashes,
             self.config.false_positive_rate,
@@ -170,7 +170,7 @@ mod tests {
             .build()
             .expect("Unable to build FilterConfig");
 
-        let mut filter = InMemorySlidingBloomFilter::new(config)
+        let mut filter = InMemoryFilter::new(config)
             .expect("Failed to create InMemorySlidingBloomFilter");
 
         filter.insert(b"some data").unwrap();
@@ -191,7 +191,7 @@ mod tests {
             .build()
             .expect("Unable to build FilterConfig");
 
-        let mut filter = InMemorySlidingBloomFilter::new(config)
+        let mut filter = InMemoryFilter::new(config)
             .expect("Failed to create InMemorySlidingBloomFilter");
 
         filter.insert(b"item1").unwrap();
@@ -216,8 +216,8 @@ mod tests {
             .build()
             .expect("Unable to build FilterConfig");
 
-        let mut filter = InMemorySlidingBloomFilter::new(config)
-            .expect("Failed to create InMemorySlidingBloomFilter");
+        let mut filter =
+            InMemoryFilter::new(config).expect("Failed to create InMemoryFilter");
 
         let items: Vec<&[u8]> =
             vec![b"apple", b"banana", b"cherry", b"date", b"elderberry"];
@@ -250,7 +250,7 @@ mod tests {
             .build()
             .expect("Unable to build FilterConfig");
 
-        let mut filter = InMemorySlidingBloomFilter::new(config)
+        let mut filter = InMemoryFilter::new(config)
             .expect("Failed to create InMemorySlidingBloomFilter");
 
         filter.insert(b"item_to_expire").unwrap();
@@ -273,7 +273,7 @@ mod tests {
             .build()
             .expect("Unable to build FilterConfig");
 
-        let mut filter = InMemorySlidingBloomFilter::new(config)
+        let mut filter = InMemoryFilter::new(config)
             .expect("Failed to create InMemorySlidingBloomFilter");
 
         filter.insert(b"test_item").unwrap();
@@ -298,7 +298,7 @@ mod tests {
             .build()
             .expect("Unable to build FilterConfig");
 
-        let mut filter = InMemorySlidingBloomFilter::new(config)
+        let mut filter = InMemoryFilter::new(config)
             .expect("Failed to create InMemorySlidingBloomFilter");
 
         // Insert old items
@@ -350,7 +350,7 @@ mod tests {
             .build()
             .expect("Unable to build FilterConfig");
 
-        let mut filter = InMemorySlidingBloomFilter::new(config)
+        let mut filter = InMemoryFilter::new(config)
             .expect("Failed to create InMemorySlidingBloomFilter");
 
         // This loop with end in 1second
@@ -429,7 +429,7 @@ mod tests {
             .build()
             .expect("Unable to build FilterConfig");
 
-        let mut filter = InMemorySlidingBloomFilter::new(config)
+        let mut filter = InMemoryFilter::new(config)
             .expect("Failed to create InMemorySlidingBloomFilter");
 
         let num_items = 1000;
@@ -482,7 +482,7 @@ mod tests {
             .expect("Unable to build FilterConfig");
 
         let filter = Arc::new(Mutex::new(
-            InMemorySlidingBloomFilter::new(config)
+            InMemoryFilter::new(config)
                 .expect("Failed to create InMemorySlidingBloomFilter"),
         ));
 
@@ -522,7 +522,7 @@ mod tests {
             .build()
             .expect("Unable to build FilterConfig");
 
-        let mut filter = InMemorySlidingBloomFilter::new(config)
+        let mut filter = InMemoryFilter::new(config)
             .expect("Failed to create InMemorySlidingBloomFilter");
 
         // Insert more items than capacity to test behavior
@@ -562,7 +562,7 @@ mod tests {
             .build()
             .expect("Unable to build FilterConfig");
 
-        let mut filter = InMemorySlidingBloomFilter::new(config)
+        let mut filter = InMemoryFilter::new(config)
             .expect("Failed to create InMemorySlidingBloomFilter");
 
         filter.insert(b"persistent_item").unwrap();
@@ -595,7 +595,7 @@ mod tests {
             .build()
             .expect("Unable to build FilterConfig");
 
-        let mut filter = InMemorySlidingBloomFilter::new(config)
+        let mut filter = InMemoryFilter::new(config)
             .expect("Failed to create InMemorySlidingBloomFilter");
 
         // Rapid insertions to test level creation

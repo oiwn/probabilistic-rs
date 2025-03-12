@@ -1,5 +1,5 @@
 use crate::{
-    error::{BloomError, Result},
+    error::{FilterError, Result},
     filter::{FilterConfig, SlidingBloomFilter},
     hash::{default_hash_function, optimal_bit_vector_size, optimal_num_hashes},
     storage::{BloomStorage, InMemoryStorage},
@@ -69,7 +69,7 @@ impl RedbFilter {
             match Self::load_config(&db)? {
                 Some(loaded_config) => (loaded_config, db),
                 None => {
-                    return Err(BloomError::StorageError(
+                    return Err(FilterError::StorageError(
                         "Database exists but no configuration found".to_string(),
                     ));
                 }
@@ -77,7 +77,7 @@ impl RedbFilter {
         } else {
             // Database doesn't exist, require configuration
             let filter_config = config.filter_config.ok_or_else(|| {
-                BloomError::InvalidConfig(
+                FilterError::InvalidConfig(
                     "Configuration required for new database".to_string(),
                 )
             })?;
@@ -134,6 +134,10 @@ impl RedbFilter {
         &self.config
     }
 
+    pub fn get_num_hashes(&self) -> usize {
+        self.num_hashes
+    }
+
     pub fn get_current_level_index(&self) -> usize {
         self.current_level_index.load(Ordering::Relaxed)
     }
@@ -171,7 +175,7 @@ impl RedbFilter {
                 config_bytes.value(),
                 bincode::config::standard(),
             )
-            .map_err(|e| BloomError::SerializationError(e.to_string()))?
+            .map_err(|e| FilterError::SerializationError(e.to_string()))?
             .0;
 
             // Rebuild config with default hash function
@@ -197,16 +201,8 @@ impl RedbFilter {
                 .open_table(CONFIG_TABLE)
                 .map_err(redb::Error::from)?;
 
-            // Serialize important config fields
-            // let serialized = bincode::serialize(&(
-            //     config.capacity,
-            //     config.false_positive_rate,
-            //     config.max_levels,
-            //     config.level_duration,
-            // ))
-            // .map_err(|e| BloomError::SerializationError(e.to_string()))?;
             let serialized = bincode::encode_to_vec(
-                &(
+                (
                     config.capacity,
                     config.false_positive_rate,
                     config.max_levels,
@@ -214,7 +210,7 @@ impl RedbFilter {
                 ),
                 bincode::config::standard(),
             )
-            .map_err(|e| BloomError::SerializationError(e.to_string()))?;
+            .map_err(|e| FilterError::SerializationError(e.to_string()))?;
 
             // Store in database
             config_table
@@ -257,10 +253,6 @@ impl RedbFilter {
                         self.storage.timestamps[level] =
                             SystemTime::UNIX_EPOCH + duration;
                     }
-                    // if let Ok(duration) = bincode::deserialize(ts_bytes.value()) {
-                    //     self.storage.timestamps[level] =
-                    //         SystemTime::UNIX_EPOCH + duration;
-                    // }
                 }
             }
         }
@@ -299,7 +291,7 @@ impl RedbFilter {
                 let ts_bytes =
                     bincode::encode_to_vec(duration, bincode::config::standard())
                         .map_err(|e| {
-                            BloomError::SerializationError(e.to_string())
+                            FilterError::SerializationError(e.to_string())
                         })?;
                 // let ts_bytes = bincode::serialize(&duration)
                 //     .map_err(|e| BloomError::SerializationError(e.to_string()))?;

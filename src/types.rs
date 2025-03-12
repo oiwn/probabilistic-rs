@@ -1,4 +1,4 @@
-use crate::{BloomError, FilterConfig, RedbFilter, Result};
+use crate::{FilterConfig, FilterError, RedbFilter, Result};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -54,7 +54,7 @@ impl ServerConfig {
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()
                 .map_err(|e: std::num::ParseIntError| {
-                    BloomError::EnvParseError {
+                    FilterError::EnvParseError {
                         var_name: "SERVER_PORT".into(),
                         value: std::env::var("SERVER_PORT").unwrap_or_default(),
                         error: e.to_string(),
@@ -66,7 +66,7 @@ impl ServerConfig {
                 .unwrap_or_else(|_| "10000".to_string())
                 .parse()
                 .map_err(|e: std::num::ParseIntError| {
-                    BloomError::EnvParseError {
+                    FilterError::EnvParseError {
                         var_name: "BLOOM_CAPACITY".into(),
                         value: std::env::var("BLOOM_CAPACITY")
                             .unwrap_or_default(),
@@ -77,7 +77,7 @@ impl ServerConfig {
                 .unwrap_or_else(|_| "0.01".to_string())
                 .parse()
                 .map_err(|e: std::num::ParseFloatError| {
-                    BloomError::EnvParseError {
+                    FilterError::EnvParseError {
                         var_name: "BLOOM_FALSE_POSITIVE_RATE".into(),
                         value: std::env::var("BLOOM_FALSE_POSITIVE_RATE")
                             .unwrap_or_default(),
@@ -89,7 +89,7 @@ impl ServerConfig {
                     .unwrap_or_else(|_| "60".to_string())
                     .parse()
                     .map_err(|e: std::num::ParseIntError| {
-                        BloomError::EnvParseError {
+                        FilterError::EnvParseError {
                             var_name: "BLOOM_LEVEL_DURATION_SECS".into(),
                             value: std::env::var("BLOOM_LEVEL_DURATION_SECS")
                                 .unwrap_or_default(),
@@ -101,7 +101,7 @@ impl ServerConfig {
                 .unwrap_or_else(|_| "3".to_string())
                 .parse()
                 .map_err(|e: std::num::ParseIntError| {
-                    BloomError::EnvParseError {
+                    FilterError::EnvParseError {
                         var_name: "BLOOM_MAX_LEVELS".into(),
                         value: std::env::var("BLOOM_MAX_LEVELS")
                             .unwrap_or_default(),
@@ -113,12 +113,12 @@ impl ServerConfig {
 }
 
 impl TryFrom<ServerConfig> for FilterConfig {
-    type Error = BloomError;
+    type Error = FilterError;
 
     fn try_from(server_config: ServerConfig) -> Result<Self> {
         // Validate capacity
         if server_config.bloom_capacity == 0 {
-            return Err(BloomError::InvalidConfig(
+            return Err(FilterError::InvalidConfig(
                 "capacity must be greater than 0".into(),
             ));
         }
@@ -127,21 +127,21 @@ impl TryFrom<ServerConfig> for FilterConfig {
         if server_config.bloom_false_positive_rate <= 0.0
             || server_config.bloom_false_positive_rate >= 1.0
         {
-            return Err(BloomError::InvalidConfig(
+            return Err(FilterError::InvalidConfig(
                 "false positive rate must be between 0 and 1".into(),
             ));
         }
 
         // Validate max levels
         if server_config.bloom_max_levels == 0 {
-            return Err(BloomError::InvalidConfig(
+            return Err(FilterError::InvalidConfig(
                 "max levels must be greater than 0".into(),
             ));
         }
 
         // Validate level duration
         if server_config.bloom_level_duration.as_secs() == 0 {
-            return Err(BloomError::InvalidConfig(
+            return Err(FilterError::InvalidConfig(
                 "level duration must be greater than 0 seconds".into(),
             ));
         }
@@ -197,7 +197,7 @@ mod tests {
 
         let result = FilterConfig::try_from(server_config);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), BloomError::InvalidConfig(_)));
+        assert!(matches!(result.unwrap_err(), FilterError::InvalidConfig(_)));
     }
 
     #[test]
@@ -214,7 +214,7 @@ mod tests {
 
         let result = FilterConfig::try_from(server_config);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), BloomError::InvalidConfig(_)));
+        assert!(matches!(result.unwrap_err(), FilterError::InvalidConfig(_)));
     }
 
     #[test]
@@ -231,7 +231,7 @@ mod tests {
 
         let result = FilterConfig::try_from(server_config);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), BloomError::InvalidConfig(_)));
+        assert!(matches!(result.unwrap_err(), FilterError::InvalidConfig(_)));
     }
 
     #[test]
@@ -248,6 +248,6 @@ mod tests {
 
         let result = FilterConfig::try_from(server_config);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), BloomError::InvalidConfig(_)));
+        assert!(matches!(result.unwrap_err(), FilterError::InvalidConfig(_)));
     }
 }

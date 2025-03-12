@@ -1,6 +1,6 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use expiring_bloom_rs::{
-    FilterConfigBuilder, InMemorySlidingBloomFilter, SlidingBloomFilter,
+    FilterConfigBuilder, InMemoryFilter, SlidingBloomFilter,
 };
 use rand::{Rng, distr::Alphanumeric};
 use std::{time::Duration, time::SystemTime};
@@ -19,7 +19,7 @@ fn generate_test_data(count: usize) -> Vec<String> {
     (0..count).map(|_| generate_random_string(32)).collect()
 }
 
-fn create_test_filter(capacity: usize) -> InMemorySlidingBloomFilter {
+fn create_test_filter(capacity: usize) -> InMemoryFilter {
     let config = FilterConfigBuilder::default()
         .capacity(capacity)
         .false_positive_rate(0.01)
@@ -28,8 +28,7 @@ fn create_test_filter(capacity: usize) -> InMemorySlidingBloomFilter {
         .build()
         .expect("Failed to create config");
 
-    InMemorySlidingBloomFilter::new(config)
-        .expect("Failed to create Bloom filter")
+    InMemoryFilter::new(config).expect("Failed to create Bloom filter")
 }
 
 // Helper to create "expired" timestamps

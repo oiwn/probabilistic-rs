@@ -1,9 +1,9 @@
 use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, BloomError>;
+pub type Result<T> = std::result::Result<T, FilterError>;
 
 #[derive(Error, Debug)]
-pub enum BloomError {
+pub enum FilterError {
     #[error("Storage operation failed: {0}")]
     StorageError(String),
 
