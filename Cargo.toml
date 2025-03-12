@@ -44,7 +44,8 @@ rand = "0.9"
 expiring-bloom-rs = { path = ".", features = ["redb", "server", "cli"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 tower = "0.5"
-comfy-table = "7.1.4"
+comfy-table = "7.1"
+colored = "3.0"
 
 [[bin]]
 name = "expblf"
@@ -65,8 +66,6 @@ all-features = false
 default = ["redb", "server", "cli"]
 redb = ["dep:redb"]
 server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde", "dep:serde_json", "dep:dotenvy", "dep:redb"]
-# clap = ["dep:clap"]
-# ratatui = ["dep:ratatui"]
 cli = ["dep:clap", "dep:ratatui", "dep:unicode-width", "redb"]
 
 [[bench]]

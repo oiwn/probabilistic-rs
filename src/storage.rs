@@ -1,4 +1,4 @@
-use crate::error::{BloomError, Result};
+use crate::error::{FilterError, Result};
 use std::time::SystemTime;
 
 // Trait for the storage backend
@@ -42,7 +42,7 @@ impl InMemoryStorage {
 impl BloomStorage for InMemoryStorage {
     fn set_bits(&mut self, level: usize, indices: &[usize]) -> Result<()> {
         if level >= self.levels.len() {
-            return Err(BloomError::InvalidLevel {
+            return Err(FilterError::InvalidLevel {
                 level,
                 max_levels: self.levels.len(),
             });
@@ -51,7 +51,7 @@ impl BloomStorage for InMemoryStorage {
         // Check all indices first
         if let Some(&max_index) = indices.iter().max() {
             if max_index >= self.capacity {
-                return Err(BloomError::IndexOutOfBounds {
+                return Err(FilterError::IndexOutOfBounds {
                     index: max_index,
                     capacity: self.capacity,
                 });
@@ -67,7 +67,7 @@ impl BloomStorage for InMemoryStorage {
 
     fn get_bits(&self, level: usize, indices: &[usize]) -> Result<Vec<bool>> {
         if level >= self.levels.len() {
-            return Err(BloomError::InvalidLevel {
+            return Err(FilterError::InvalidLevel {
                 level,
                 max_levels: self.levels.len(),
             });
@@ -76,7 +76,7 @@ impl BloomStorage for InMemoryStorage {
         // Check all indices first
         if let Some(&max_index) = indices.iter().max() {
             if max_index >= self.capacity {
-                return Err(BloomError::IndexOutOfBounds {
+                return Err(FilterError::IndexOutOfBounds {
                     index: max_index,
                     capacity: self.capacity,
                 });
@@ -92,7 +92,7 @@ impl BloomStorage for InMemoryStorage {
 
     fn clear_level(&mut self, level: usize) -> Result<()> {
         if level >= self.levels.len() {
-            return Err(BloomError::InvalidLevel {
+            return Err(FilterError::InvalidLevel {
                 level,
                 max_levels: self.levels.len(),
             });
@@ -108,7 +108,7 @@ impl BloomStorage for InMemoryStorage {
         timestamp: SystemTime,
     ) -> Result<()> {
         if level >= self.timestamps.len() {
-            return Err(BloomError::InvalidLevel {
+            return Err(FilterError::InvalidLevel {
                 level,
                 max_levels: self.timestamps.len(),
             });
@@ -120,7 +120,7 @@ impl BloomStorage for InMemoryStorage {
 
     fn get_timestamp(&self, level: usize) -> Result<Option<SystemTime>> {
         if level >= self.timestamps.len() {
-            return Err(BloomError::InvalidLevel {
+            return Err(FilterError::InvalidLevel {
                 level,
                 max_levels: self.timestamps.len(),
             });

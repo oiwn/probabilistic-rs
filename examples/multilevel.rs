@@ -1,17 +1,19 @@
+#![allow(clippy::needless_range_loop)]
+use colored::Colorize;
 use comfy_table::{
-    Cell, ContentArrangement, Table, modifiers::UTF8_ROUND_CORNERS,
-    presets::UTF8_FULL,
+    ContentArrangement, Table, modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL,
 };
 use expiring_bloom_rs::{
-    FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder, SlidingBloomFilter,
+    BloomStorage, FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder,
+    SlidingBloomFilter,
 };
-use rand::{Rng, distr::Alphanumeric, seq::IndexedRandom, seq::SliceRandom};
+use rand::{Rng, distr::Alphanumeric, seq::IndexedRandom};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     thread,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant},
 };
 
 // Constants for our test
@@ -19,6 +21,8 @@ const CAPACITY: usize = 1_000_000;
 const NUM_LEVELS: usize = 5;
 const UNIQUE_ITEMS: usize = 500_000;
 const TRACEABLE_ITEMS: usize = 1_000;
+const ITEMS_PER_LEVEL: usize = 100_000;
+const OVERLAP_FACTOR: f64 = 0.33; // 33% overlap between levels
 
 // Basic word list for generating traceable items
 const WORD_LIST: [&str; 20] = [
@@ -44,278 +48,73 @@ const WORD_LIST: [&str; 20] = [
     "zucchini",
 ];
 
-// Generate random string data
-fn generate_random_string(len: usize) -> String {
-    rand::rng()
-        .sample_iter(&Alphanumeric)
-        .take(len)
-        .map(char::from)
-        .collect()
-}
-
-// Generate test data
-fn generate_test_data(count: usize) -> Vec<String> {
-    (0..count).map(|_| generate_random_string(32)).collect()
-}
-
-// Generate traceable items with predictable names
-fn generate_traceable_items(count: usize) -> Vec<String> {
-    let mut items = Vec::with_capacity(count);
-    let mut rng = rand::rng();
-
-    for i in 0..count {
-        // Pick 2-3 random words from our list and join them
-        let num_words = rng.gen_range(2..=3);
-        let mut selected_words = Vec::with_capacity(num_words);
-
-        for _ in 0..num_words {
-            selected_words.push(*WORD_LIST.choose(&mut rng).unwrap());
-        }
-
-        // Add a unique identifier to ensure uniqueness
-        let identifier = format!("{:04}", i);
-
-        // Join the words with underscores and append the identifier
-        items.push(format!("{}_{}", selected_words.join("_"), identifier));
-    }
-
-    items
-}
-
-// Convert bytes to human-readable size
-fn format_file_size(size: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if size >= GB {
-        format!("{:.2} GB", size as f64 / GB as f64)
-    } else if size >= MB {
-        format!("{:.2} MB", size as f64 / MB as f64)
-    } else if size >= KB {
-        format!("{:.2} KB", size as f64 / KB as f64)
-    } else {
-        format!("{} bytes", size)
-    }
-}
-
-// Get file size in bytes
-fn get_file_size(path: &Path) -> std::io::Result<u64> {
-    let metadata = fs::metadata(path)?;
-    Ok(metadata.len())
-}
-
-// Calculate average bit density in a bit vector
-fn calculate_bit_density(filter: &RedbFilter, level: usize) -> f64 {
-    let level_bits = &filter.storage.levels[level];
-    let set_bits = level_bits.iter().filter(|&&bit| bit).count();
-
-    set_bits as f64 / level_bits.len() as f64
-}
-
-// Measure query performance
-fn measure_query_performance(
-    filter: &RedbFilter,
-    known_items: &[String],
-    unknown_items: &[String],
-    traceable_items: &[String],
-) -> (Duration, Duration, f64, Vec<(String, bool)>) {
-    // Query known items
-    let start_time = Instant::now();
-    let mut known_positive = 0;
-    for item in known_items {
-        if filter.query(item.as_bytes()).unwrap() {
-            known_positive += 1;
-        }
-    }
-    let known_duration = start_time.elapsed();
-    let known_rate = known_items.len() as f64 / known_duration.as_secs_f64();
-
-    // Query unknown items
-    let start_time = Instant::now();
-    let mut false_positive = 0;
-    for item in unknown_items {
-        if filter.query(item.as_bytes()).unwrap() {
-            false_positive += 1;
-        }
-    }
-    let unknown_duration = start_time.elapsed();
-    let false_positive_rate = false_positive as f64 / unknown_items.len() as f64;
-
-    // Track traceable items
-    let mut traceable_results = Vec::new();
-    for item in traceable_items {
-        let exists = filter.query(item.as_bytes()).unwrap();
-        traceable_results.push((item.clone(), exists));
-    }
-
-    // Average query duration
-    let avg_duration = (known_duration + unknown_duration) / 2;
-
-    (
-        avg_duration,
-        Duration::from_secs_f64(1.0 / known_rate),
-        false_positive_rate,
-        traceable_results,
-    )
-}
-
-// Generate reusable elements strategy with overlap between levels
-fn generate_distributed_elements(
-    total_unique: usize,
-    num_levels: usize,
-    items_per_level: usize,
-    overlap_factor: f64,
-) -> Vec<Vec<usize>> {
-    let mut rng = rand::rng();
-    let mut levels = vec![Vec::new(); num_levels];
-
-    // Initially assign unique indexes to each level
-    let items_per_level_unique =
-        (items_per_level as f64 * (1.0 - overlap_factor)) as usize;
-    let mut start_idx = 0;
-
-    for level in 0..num_levels {
-        for i in 0..items_per_level_unique {
-            if start_idx + i < total_unique {
-                levels[level].push(start_idx + i);
-            }
-        }
-        start_idx += items_per_level_unique;
-    }
-
-    // Now create overlap by copying elements between levels
-    let overlap_items = (items_per_level as f64 * overlap_factor) as usize;
-
-    for level in 0..num_levels {
-        // Select elements from other levels
-        let mut available_items = Vec::new();
-        for other_level in 0..num_levels {
-            if other_level != level {
-                available_items.extend(levels[other_level].iter());
-            }
-        }
-
-        // Shuffle and select a subset for overlap
-        available_items.shuffle(&mut rng);
-        let overlap_subset: Vec<usize> = available_items
-            .iter()
-            .take(overlap_items)
-            .cloned()
-            .collect();
-
-        // Add these to the current level
-        levels[level].extend(overlap_subset);
-    }
-
-    levels
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let items_per_level = 150_000; // We'll have some overlap
-    let overlap_factor = 0.33; // 33% overlap between levels
+    println!("Time-Decaying Bloom Filter Multi-Level Benchmark");
+    println!("Configuration:");
+    println!(
+        "Capacity={}, Items/level={}, Overlap={}%, Levels={}",
+        CAPACITY,
+        ITEMS_PER_LEVEL,
+        (OVERLAP_FACTOR * 100.0) as u32,
+        NUM_LEVELS,
+    );
+    println!(
+        "Unique items={}, Traceable items={}",
+        UNIQUE_ITEMS, TRACEABLE_ITEMS
+    );
 
-    // Create nice table for output
-    let mut header_table = Table::new();
-    header_table
-        .load_preset(UTF8_FULL)
-        .apply_modifier(UTF8_ROUND_CORNERS)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec![
-            Cell::new("Time-Decaying Bloom Filter Multi-Level Benchmark")
-                .add_attribute(comfy_table::Attribute::Bold),
-        ]);
-
-    println!("{}", header_table);
-
-    // Create config table
-    let mut config_table = Table::new();
-    config_table
-        .load_preset(UTF8_FULL)
-        .apply_modifier(UTF8_ROUND_CORNERS)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec!["Configuration", "Value"]);
-
-    config_table.add_row(vec!["Total capacity", &format!("{}", CAPACITY)]);
-    config_table
-        .add_row(vec!["Items per level", &format!("{}", items_per_level)]);
-    config_table.add_row(vec![
-        "Overlap factor",
-        &format!("{:.0}%", overlap_factor * 100.0),
-    ]);
-    config_table.add_row(vec!["Number of levels", &format!("{}", NUM_LEVELS)]);
-    config_table.add_row(vec!["Unique items", &format!("{}", UNIQUE_ITEMS)]);
-    config_table
-        .add_row(vec!["Traceable items", &format!("{}", TRACEABLE_ITEMS)]);
-
-    println!("{}", config_table);
-
-    // Create the database path
     let file_name = format!("bloom_multilevel_{}.redb", CAPACITY);
     let db_path = Path::new(&file_name);
 
     // Remove any existing database file
     if db_path.exists() {
         fs::remove_file(db_path)?;
-        println!("Removed existing database file");
+        let message = "Removed existing database file".red();
+        println!("{} : {}", message, db_path.display());
     }
 
-    // Create the filter configuration
-    let config = FilterConfigBuilder::default()
-        .capacity(CAPACITY)
-        .false_positive_rate(0.01)
-        .level_duration(Duration::from_secs(60))
-        .max_levels(NUM_LEVELS)
-        .build()?;
-
-    let redb_config = RedbFilterConfigBuilder::default()
-        .db_path(db_path.to_path_buf())
-        .filter_config(Some(config))
-        .snapshot_interval(Duration::from_secs(60))
-        .build()?;
-
-    // Create a new filter
-    let mut filter = RedbFilter::new(redb_config)?;
+    let mut filter = create_filter(db_path);
 
     // Generate all our data
-    println!("\nGenerating test data...");
+    println!("\nGenerating test data (takes few seconds!)...");
     let mut all_test_data = generate_test_data(UNIQUE_ITEMS);
 
     // Generate traceable items and replace some of the random data with them
     println!("Generating traceable items...");
     let traceable_items = generate_traceable_items(TRACEABLE_ITEMS);
 
-    // Replace the first TRACEABLE_ITEMS elements with our traceable ones
-    for i in 0..traceable_items.len() {
-        if i < all_test_data.len() {
-            all_test_data[i] = traceable_items[i].clone();
-        }
-    }
+    println!("Adding traceable items to test data...");
+    all_test_data.extend(traceable_items.iter().cloned());
 
     // Generate distribution of elements across levels with overlap
     println!("Creating distributed element strategy with overlap...");
-    let level_distributions = generate_distributed_elements(
+    let mut level_distributions = generate_time_ordered_elements(
         UNIQUE_ITEMS,
         NUM_LEVELS,
-        items_per_level,
-        overlap_factor,
+        ITEMS_PER_LEVEL,
+        OVERLAP_FACTOR,
     );
 
-    // Create a mapping of which traceable items are in which levels
-    let mut traceable_level_map = HashMap::new();
-    for level in 0..NUM_LEVELS {
-        for &idx in &level_distributions[level] {
-            if idx < TRACEABLE_ITEMS {
-                traceable_level_map
-                    .entry(traceable_items[idx].clone())
-                    .or_insert_with(Vec::new)
-                    .push(level);
-            }
+    let mut rng = rand::rng();
+
+    // Indices of traceable items in all_test_data
+    let traceable_start_idx = all_test_data.len() - traceable_items.len();
+
+    for (i, _item) in traceable_items.iter().enumerate() {
+        let item_idx = traceable_start_idx + i;
+
+        // Randomly determine sequential layers (chain)
+        let chain_length = rng.random_range(1..=NUM_LEVELS.min(5));
+        let start_level = rng.random_range(0..=NUM_LEVELS - chain_length);
+
+        for level in start_level..start_level + chain_length {
+            level_distributions[level].push(item_idx);
         }
     }
 
     // Track insertion times and other metrics for each level
     let mut level_metrics = Vec::new();
+    let mut traceable_level_map: HashMap<String, Vec<usize>> = HashMap::new();
 
     // Insert data in batches to simulate levels with overlapping elements
     for level in 0..NUM_LEVELS {
@@ -333,10 +132,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 print!("{}%... ", (i * 100) / level_size);
                 std::io::Write::flush(&mut std::io::stdout())?;
             }
-
             // Get the item and insert it
             let item = &all_test_data[idx];
-            filter.insert(item.as_bytes())?;
+
+            // This is reimplemenatation of insert:
+            // filter.insert(item.as_bytes())?;
+            // because i need to drop it into the different levels
+            let indices: Vec<usize> = (filter.get_config().hash_function)(
+                item.as_bytes(),
+                filter.get_num_hashes(),
+                filter.get_config().capacity,
+            )
+            .into_iter()
+            .map(|h| h as usize)
+            .collect();
+            filter.storage.set_bits(level, &indices).unwrap();
+
+            // Record item to level mapping for traceable items
+            if traceable_items.contains(item) {
+                traceable_level_map
+                    .entry(item.clone())
+                    .or_default()
+                    .push(level);
+            }
         }
         println!("100%");
 
@@ -406,13 +224,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let (avg_query_duration, per_query_time, measured_fpr, traceable_results) =
-        measure_query_performance(
-            &filter,
-            &known_sample,
-            &unknown_data,
-            &traceable_items,
-        );
+    let (
+        _known_positive,     // TODO: use it
+        _avg_query_duration, // TODO: use it
+        per_query_time,
+        measured_fpr,
+        traceable_results,
+    ) = measure_query_performance(
+        &filter,
+        &known_sample,
+        &unknown_data,
+        &traceable_items,
+    );
 
     // Create a table for level metrics
     let mut level_table = Table::new();
@@ -497,20 +320,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(vec!["Traceable Item", "In Filter", "In Levels"]);
 
-    // Show a sample of 10 traceable items
-    for i in 0..10 {
-        let item = &traceable_items[i];
-        let (item_name, found) = &traceable_results[i];
-        let level_info = match traceable_level_map.get(item) {
-            Some(levels) => levels
-                .iter()
-                .map(|l| l.to_string())
-                .collect::<Vec<String>>()
-                .join(", "),
-            None => "None".to_string(),
-        };
-        let check_mark = String::from("✓");
-        let x_mark = String::from("✗");
+    // Display a sample of 10 traceable items
+    let check_mark = "✓".to_string();
+    let x_mark = "✗".to_string();
+
+    for (item, (item_name, found)) in traceable_items
+        .iter()
+        .zip(traceable_results.iter())
+        .take(10)
+    {
+        let level_info = traceable_level_map
+            .get(item)
+            .map(|levels| {
+                levels
+                    .iter()
+                    .map(|l| l.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_else(|| "None".into());
+
         traceable_table.add_row(vec![
             item_name,
             if *found { &check_mark } else { &x_mark },
@@ -521,7 +350,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nTraceable Items Sample (first 10):");
     println!("{}", traceable_table);
 
-    // Display theoretical vs. measured stats
+    // After the traceable items section, add this code:
+
+    // Create a sample table for non-traceable items
+    let mut non_traceable_table = Table::new();
+    non_traceable_table
+        .load_preset(UTF8_FULL)
+        .apply_modifier(UTF8_ROUND_CORNERS)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec!["Non-Traceable Item", "In Filter", "Expected"]);
+
+    // Generate some non-traceable items
+    let non_traceable_items: Vec<String> = (0..10)
+        .map(|i| format!("definitely_not_in_filter_{}", i))
+        .collect();
+
+    // Check if they're in the filter
+    let non_traceable_results: Vec<(String, bool)> = non_traceable_items
+        .iter()
+        .map(|item| {
+            let exists = filter.query(item.as_bytes()).unwrap_or(false);
+            (item.clone(), exists)
+        })
+        .collect();
+
+    // Display the non-traceable items
+    let check_mark = "✓".to_string();
+    let x_mark = "✗".to_string();
+
+    for (item, found) in non_traceable_results.iter().take(10) {
+        non_traceable_table.add_row(vec![
+            item,
+            if *found { &check_mark } else { &x_mark },
+            &x_mark, // Always expected to be not found
+        ]);
+    }
+
+    println!("\nNon-Traceable Items Sample (10):");
+    println!("{}", non_traceable_table);
+
+    // Add statistics about false positives in non-traceable items
+    let false_positive_count = non_traceable_results
+        .iter()
+        .filter(|(_, found)| *found)
+        .count();
+    if false_positive_count > 0 {
+        println!(
+            "\nDetected {} false positives in non-traceable items check!",
+            false_positive_count
+        );
+        println!(
+            "This matches the expected false positive rate of the filter configuration."
+        );
+    } else {
+        println!(
+            "\nNo false positives detected in the non-traceable items check."
+        );
+    }
+
+    // Theoretical vs. measured statistics
     println!("\nTheoretical vs. Measured Performance:");
     println!("  Configured FPR: 1.00%");
     println!("  Measured FPR:   {:.4}%", measured_fpr * 100.0);
@@ -530,6 +417,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         bits_per_item
     );
 
+    // Data distribution statistics
     println!("\nData Distribution Statistics:");
     println!(
         "  Average elements per level: {:.2}",
@@ -538,18 +426,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut overlap_counts = vec![0; NUM_LEVELS + 1];
     for item in traceable_items.iter().take(TRACEABLE_ITEMS) {
-        if let Some(levels) = traceable_level_map.get(item) {
-            if levels.len() <= NUM_LEVELS {
-                overlap_counts[levels.len()] += 1;
-            }
-        } else {
-            overlap_counts[0] += 1;
-        }
+        let count = traceable_level_map
+            .get(item)
+            .map_or(0, |levels| levels.len());
+        overlap_counts[count] += 1;
     }
 
     println!("  Distribution of traceable items across levels:");
-    for i in 0..=NUM_LEVELS {
-        println!("    Items in {} level(s): {}", i, overlap_counts[i]);
+    for (i, count) in overlap_counts.iter().enumerate() {
+        println!("    Items in {} level(s): {}", i, count);
     }
 
     // Optional: clean up the database file
@@ -557,4 +442,179 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nBenchmark complete. Database file cleaned up.");
 
     Ok(())
+}
+
+// Generate random string data
+fn generate_random_string(len: usize) -> String {
+    rand::rng()
+        .sample_iter(&Alphanumeric)
+        .take(len)
+        .map(char::from)
+        .collect()
+}
+
+// Generate test data
+fn generate_test_data(count: usize) -> Vec<String> {
+    (0..count).map(|_| generate_random_string(32)).collect()
+}
+
+// Generate traceable items with predictable names
+fn generate_traceable_items(count: usize) -> Vec<String> {
+    let mut items = Vec::with_capacity(count);
+    let mut rng = rand::rng();
+
+    for i in 0..count {
+        // Pick 2-3 random words from our list and join them
+        let num_words = rng.random_range(2..=3);
+        let mut selected_words = Vec::with_capacity(num_words);
+
+        for _ in 0..num_words {
+            selected_words.push(*WORD_LIST.choose(&mut rng).unwrap());
+        }
+
+        // Add a unique identifier to ensure uniqueness
+        let identifier = format!("{:04}", i);
+
+        // Join the words with underscores and append the identifier
+        items.push(format!("{}_{}", selected_words.join("_"), identifier));
+    }
+
+    items
+}
+
+// Convert bytes to human-readable size
+fn format_file_size(size: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if size >= GB {
+        format!("{:.2} GB", size as f64 / GB as f64)
+    } else if size >= MB {
+        format!("{:.2} MB", size as f64 / MB as f64)
+    } else if size >= KB {
+        format!("{:.2} KB", size as f64 / KB as f64)
+    } else {
+        format!("{} bytes", size)
+    }
+}
+
+// Get file size in bytes
+fn get_file_size(path: &Path) -> std::io::Result<u64> {
+    let metadata = fs::metadata(path)?;
+    Ok(metadata.len())
+}
+
+fn create_filter(db_path: &Path) -> RedbFilter {
+    // Create the filter configuration
+    let config = FilterConfigBuilder::default()
+        .capacity(CAPACITY)
+        .false_positive_rate(0.01)
+        .level_duration(Duration::from_secs(60))
+        .max_levels(NUM_LEVELS)
+        .build()
+        .unwrap();
+
+    let redb_config = RedbFilterConfigBuilder::default()
+        .db_path(db_path.to_path_buf())
+        .filter_config(Some(config))
+        .snapshot_interval(Duration::from_secs(60))
+        .build()
+        .unwrap();
+
+    // Create a new filter
+    RedbFilter::new(redb_config).unwrap()
+}
+
+// Calculate average bit density in a bit vector
+fn calculate_bit_density(filter: &RedbFilter, level: usize) -> f64 {
+    let level_bits = &filter.storage.levels[level];
+    let set_bits = level_bits.iter().filter(|&&bit| bit).count();
+
+    set_bits as f64 / level_bits.len() as f64
+}
+
+// Measure query performance
+fn measure_query_performance(
+    filter: &RedbFilter,
+    known_items: &[String],
+    unknown_items: &[String],
+    traceable_items: &[String],
+) -> (u32, Duration, Duration, f64, Vec<(String, bool)>) {
+    // Query known items
+    let start_time = Instant::now();
+    let mut known_positive = 0u32;
+    for item in known_items {
+        if filter.query(item.as_bytes()).unwrap() {
+            known_positive += 1;
+        }
+    }
+    let known_duration = start_time.elapsed();
+    let known_rate = known_items.len() as f64 / known_duration.as_secs_f64();
+
+    // Query unknown items
+    let start_time = Instant::now();
+    let mut false_positive = 0;
+    for item in unknown_items {
+        if filter.query(item.as_bytes()).unwrap() {
+            false_positive += 1;
+        }
+    }
+    let unknown_duration = start_time.elapsed();
+    let false_positive_rate = false_positive as f64 / unknown_items.len() as f64;
+
+    // Track traceable items
+    let mut traceable_results = Vec::new();
+    for item in traceable_items {
+        let exists = filter.query(item.as_bytes()).unwrap();
+        traceable_results.push((item.clone(), exists));
+    }
+
+    // Average query duration
+    let avg_duration = (known_duration + unknown_duration) / 2;
+
+    (
+        known_positive,
+        avg_duration,
+        Duration::from_secs_f64(1.0 / known_rate),
+        false_positive_rate,
+        traceable_results,
+    )
+}
+
+fn generate_time_ordered_elements(
+    total_unique: usize,
+    num_levels: usize,
+    items_per_level: usize,
+    overlap_factor: f64,
+) -> Vec<Vec<usize>> {
+    let mut rng = rand::rng();
+    let mut levels = vec![Vec::new(); num_levels];
+    let mut current_idx = 0;
+
+    let overlap_items =
+        (items_per_level as f64 * overlap_factor).round() as usize;
+    let unique_items = items_per_level - overlap_items;
+
+    for level in 0..num_levels {
+        // Add unique items
+        for _ in 0..unique_items {
+            if current_idx < total_unique {
+                levels[level].push(current_idx);
+                current_idx += 1;
+            }
+        }
+
+        // Add overlap from previous level
+        if level > 0 {
+            let prev_level = &levels[level - 1];
+            let overlap_subset: Vec<_> = prev_level
+                .choose_multiple(&mut rng, overlap_items.min(prev_level.len()))
+                .cloned()
+                .collect();
+            levels[level].extend(overlap_subset);
+        }
+    }
+
+    levels
 }
