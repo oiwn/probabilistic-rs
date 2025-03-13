@@ -1,7 +1,7 @@
 use crate::error::{FilterError, Result};
 use crate::filter::{FilterConfig, SlidingBloomFilter};
 use crate::hash::{optimal_bit_vector_size, optimal_num_hashes};
-use crate::storage::{BloomStorage, InMemoryStorage};
+use crate::storage::{FilterStorage, InMemoryStorage};
 use std::time::SystemTime;
 
 // Base filter implementation

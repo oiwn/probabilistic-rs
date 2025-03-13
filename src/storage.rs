@@ -1,8 +1,12 @@
 use crate::error::{FilterError, Result};
+use bitvec::{
+    order::Lsb0,
+    prelude::{BitVec, bitvec},
+};
 use std::time::SystemTime;
 
 // Trait for the storage backend
-pub trait BloomStorage {
+pub trait FilterStorage {
     /// Sets multiple bits at the specified level and indices
     fn set_bits(&mut self, level: usize, indices: &[usize]) -> Result<()>;
     /// Gets multiple bit values at the specified level and indices
@@ -24,22 +28,25 @@ pub trait BloomStorage {
 
 // In-memory storage implementation
 pub struct InMemoryStorage {
-    pub levels: Vec<Vec<bool>>,
+    // pub levels: Vec<Vec<bool>>,
+    pub levels: Vec<BitVec<usize, Lsb0>>,
     pub timestamps: Vec<SystemTime>,
     pub capacity: usize,
 }
 
 impl InMemoryStorage {
     pub fn new(capacity: usize, max_levels: usize) -> Result<Self> {
+        let levels = (0..max_levels).map(|_| bitvec![0; capacity]).collect();
         Ok(Self {
-            levels: vec![vec![false; capacity]; max_levels],
+            levels,
+            // levels: vec![vec![false; capacity]; max_levels],
             timestamps: vec![SystemTime::now(); max_levels],
             capacity,
         })
     }
 }
 
-impl BloomStorage for InMemoryStorage {
+impl FilterStorage for InMemoryStorage {
     fn set_bits(&mut self, level: usize, indices: &[usize]) -> Result<()> {
         if level >= self.levels.len() {
             return Err(FilterError::InvalidLevel {
@@ -60,8 +67,11 @@ impl BloomStorage for InMemoryStorage {
 
         // Set all bits in one go
         for &index in indices {
-            self.levels[level][index] = true;
+            self.levels[level].set(index, true);
         }
+        // for &index in indices {
+        //     self.levels[level][index] = true;
+        // }
         Ok(())
     }
 
@@ -97,8 +107,8 @@ impl BloomStorage for InMemoryStorage {
                 max_levels: self.levels.len(),
             });
         }
-
-        self.levels[level] = vec![false; self.capacity];
+        self.levels[level].fill(false);
+        // self.levels[level] = vec![false; self.capacity];
         Ok(())
     }
 

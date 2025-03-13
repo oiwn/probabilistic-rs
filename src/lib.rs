@@ -53,7 +53,7 @@ pub use hash::{
 pub use inmemory_filter::InMemoryFilter;
 #[cfg(feature = "redb")]
 pub use redb_filter::{RedbFilter, RedbFilterConfig, RedbFilterConfigBuilder};
-pub use storage::{BloomStorage, InMemoryStorage};
+pub use storage::{FilterStorage, InMemoryStorage};
 #[cfg(feature = "server")]
 pub use types::{
     AppState, ServerConfig, ServerConfigBuilder, ServerConfigBuilderError,

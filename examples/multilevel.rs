@@ -4,7 +4,7 @@ use comfy_table::{
     ContentArrangement, Table, modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL,
 };
 use expiring_bloom_rs::{
-    BloomStorage, FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder,
+    FilterConfigBuilder, FilterStorage, RedbFilter, RedbFilterConfigBuilder,
     SlidingBloomFilter,
 };
 use rand::{Rng, distr::Alphanumeric, seq::IndexedRandom};
@@ -424,7 +424,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_items_inserted as f64 / NUM_LEVELS as f64
     );
 
-    let mut overlap_counts = vec![0; NUM_LEVELS + 1];
+    let mut overlap_counts = [0; NUM_LEVELS + 1];
     for item in traceable_items.iter().take(TRACEABLE_ITEMS) {
         let count = traceable_level_map
             .get(item)
@@ -529,7 +529,8 @@ fn create_filter(db_path: &Path) -> RedbFilter {
 // Calculate average bit density in a bit vector
 fn calculate_bit_density(filter: &RedbFilter, level: usize) -> f64 {
     let level_bits = &filter.storage.levels[level];
-    let set_bits = level_bits.iter().filter(|&&bit| bit).count();
+    // let set_bits = level_bits.iter().filter(|&&bit| bit).count();
+    let set_bits = level_bits.iter().filter(|bit| **bit).count();
 
     set_bits as f64 / level_bits.len() as f64
 }
