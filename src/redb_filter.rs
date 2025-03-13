@@ -1,6 +1,6 @@
 use crate::{
     error::{FilterError, Result},
-    filter::{FilterConfig, SlidingBloomFilter},
+    filter::{ExpiringBloomFilter, FilterConfig},
     hash::{default_hash_function, optimal_bit_vector_size, optimal_num_hashes},
     storage::{FilterStorage, InMemoryStorage},
 };
@@ -326,7 +326,7 @@ impl RedbFilter {
     }
 }
 
-impl SlidingBloomFilter for RedbFilter {
+impl ExpiringBloomFilter for RedbFilter {
     fn insert(&mut self, item: &[u8]) -> Result<()> {
         if self.should_create_new_level()? {
             self.create_new_level()?;

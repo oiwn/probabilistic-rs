@@ -4,8 +4,8 @@ use comfy_table::{
     ContentArrangement, Table, modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL,
 };
 use expiring_bloom_rs::{
-    FilterConfigBuilder, FilterStorage, RedbFilter, RedbFilterConfigBuilder,
-    SlidingBloomFilter,
+    ExpiringBloomFilter, FilterConfigBuilder, FilterStorage, RedbFilter,
+    RedbFilterConfigBuilder,
 };
 use rand::{Rng, distr::Alphanumeric, seq::IndexedRandom};
 use std::{

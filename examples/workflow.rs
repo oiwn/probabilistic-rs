@@ -1,5 +1,5 @@
 use expiring_bloom_rs::{
-    FilterConfigBuilder, InMemoryFilter, SlidingBloomFilter,
+    ExpiringBloomFilter, FilterConfigBuilder, InMemoryFilter,
     tui::{App, AppMessage, InputMode, MessageType},
 };
 use rand::{Rng, seq::IndexedRandom};

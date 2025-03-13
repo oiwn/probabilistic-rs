@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use expiring_bloom_rs::ExpiringBloomFilter;
     use expiring_bloom_rs::FilterConfigBuilder;
-    use expiring_bloom_rs::SlidingBloomFilter;
     use expiring_bloom_rs::{RedbFilter, RedbFilterConfigBuilder};
     use std::{fs, path::PathBuf, thread, time::Duration};
 

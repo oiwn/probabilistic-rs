@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use expiring_bloom_rs::{
-    FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder, SlidingBloomFilter,
-    optimal_bit_vector_size, optimal_num_hashes,
+    ExpiringBloomFilter, FilterConfigBuilder, RedbFilter,
+    RedbFilterConfigBuilder, optimal_bit_vector_size, optimal_num_hashes,
     tui::{App, AppMessage, InputMode, MessageType, run_app},
 };
 use ratatui::{

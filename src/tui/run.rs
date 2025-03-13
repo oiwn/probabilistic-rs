@@ -1,5 +1,5 @@
 use super::{App, AppMessage, InputMode, MessageType, ui};
-use crate::SlidingBloomFilter;
+use crate::ExpiringBloomFilter;
 use ratatui::crossterm::event::{self, Event, KeyCode};
 use ratatui::{Terminal, backend::Backend};
 use std::{io, time::Duration};

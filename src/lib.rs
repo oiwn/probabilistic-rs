@@ -43,8 +43,8 @@ pub mod types;
 
 pub use error::{FilterError, Result};
 pub use filter::{
-    FilterConfig, FilterConfigBuilder, FilterConfigBuilderError,
-    SlidingBloomFilter,
+    ExpiringBloomFilter, FilterConfig, FilterConfigBuilder,
+    FilterConfigBuilderError,
 };
 pub use hash::{
     HashFunction, default_hash_function, optimal_bit_vector_size,
