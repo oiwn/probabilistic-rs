@@ -13,13 +13,14 @@ impl TestDb {
     }
 
     /// Get a clone of the database path
-    /// TODO: btw this is detected as dead code while it's not
+    // FIXME: btw this is detected as dead code while it's not
     #[allow(dead_code)]
     pub fn path(&self) -> PathBuf {
         self.path.clone()
     }
 
     /// Get the database path as a string
+    // FIXME: btw this is detected as dead code while it's not
     #[allow(dead_code)]
     pub fn path_string(&self) -> String {
         self.path.to_string_lossy().to_string()

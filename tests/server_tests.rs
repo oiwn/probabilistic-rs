@@ -1,3 +1,4 @@
+#[cfg(test)]
 mod common;
 
 #[cfg(test)]
@@ -20,7 +21,7 @@ mod tests {
     async fn setup_test_app(test_name: &str) -> Router {
         let test_db = TestDb::new(&format!("server_test_{}", test_name));
 
-        // Yes, it's ugly, but why not?
+        // NOTE: Yes, it's ugly, but why not?
         let port = match test_name {
             "health_check" => 50001,
             "insert_and_query" => 50002,
