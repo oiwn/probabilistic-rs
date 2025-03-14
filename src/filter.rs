@@ -28,7 +28,7 @@ pub struct FilterConfig {
     pub hash_function: HashFunction,
 }
 
-pub trait SlidingBloomFilter {
+pub trait ExpiringBloomFilter {
     fn insert(&mut self, item: &[u8]) -> Result<()>;
     fn query(&self, item: &[u8]) -> Result<bool>;
     fn cleanup_expired_levels(&mut self) -> Result<()>;

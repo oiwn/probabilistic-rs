@@ -1,6 +1,6 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use expiring_bloom_rs::{
-    FilterConfigBuilder, InMemoryFilter, SlidingBloomFilter,
+    ExpiringBloomFilter, FilterConfigBuilder, InMemoryFilter,
 };
 use rand::{Rng, distr::Alphanumeric};
 use std::{time::Duration, time::SystemTime};

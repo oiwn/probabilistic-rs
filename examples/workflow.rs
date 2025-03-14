@@ -1,13 +1,8 @@
-use colored::Colorize;
 use expiring_bloom_rs::{
-    FilterConfigBuilder, InMemoryFilter, SlidingBloomFilter,
-    tui::{App, AppMessage, InputMode, MessageType, run_app},
+    ExpiringBloomFilter, FilterConfigBuilder, InMemoryFilter,
+    tui::{App, AppMessage, InputMode, MessageType},
 };
-use rand::{
-    Rng,
-    distr::{Alphanumeric, Uniform},
-    seq::{IndexedRandom, SliceRandom},
-};
+use rand::{Rng, seq::IndexedRandom};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -22,15 +17,14 @@ use ratatui::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    io::{self, Write},
-    thread,
-    time::{Duration, Instant, SystemTime},
+    io,
+    time::{Duration, Instant},
 };
 
 // Constants for the example
 const CAPACITY: usize = 1000;
 const FALSE_POSITIVE_RATE: f64 = 0.01;
-const LEVEL_DURATION_SECS: u64 = 3; // Short duration for demonstration
+const LEVEL_DURATION_SECS: u64 = 5; // Short duration for demonstration
 const MAX_LEVELS: usize = 3;
 const DEMO_ITEMS: usize = 200; // Number of items to insert during demo
 
@@ -99,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut filter = InMemoryFilter::new(config.clone())?;
 
     // Setup for automatic data insertion
-    let auto_insert_delay = Duration::from_millis(500); // Insert every 500ms
+    let auto_insert_delay = Duration::from_millis(200); // Insert every 500ms
     let mut next_auto_insert = Instant::now() + auto_insert_delay;
     let mut auto_insert_count = 0;
     let mut demo_items = generate_test_data(DEMO_ITEMS);
@@ -200,18 +194,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn custom_run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
     filter: &mut InMemoryFilter,
-    demo_items: &mut Vec<String>,
+    demo_items: &mut [String],
     inserted_items: &mut HashSet<String>,
     query_history: &mut HashMap<String, bool>,
     auto_insert_count: &mut usize,
     next_auto_insert: &mut Instant,
     level_rotations: &mut usize,
 ) -> io::Result<()> {
-    let start_time = Instant::now();
+    let _start_time = Instant::now();
     let mut last_level_index = filter.current_level_index;
 
     loop {
@@ -266,7 +261,8 @@ fn custom_run_app<B: ratatui::backend::Backend>(
                         .enumerate()
                     {
                         if i < redb_filter.len() {
-                            redb_filter[i] = *bit;
+                            redb_filter.set(i, *bit);
+                            // redb_filter[i] = *bit;
                         }
                     }
                 }
@@ -389,12 +385,12 @@ fn custom_run_app<B: ratatui::backend::Backend>(
 
 // Generate test data with more memorable patterns
 fn generate_test_data(count: usize) -> Vec<String> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut items = Vec::with_capacity(count);
 
-    for i in 0..count {
+    for _ in 0..count {
         // Select 1-2 random words
-        let num_words = rng.gen_range(1..=2);
+        let num_words = rng.random_range(1..=2);
         let mut selected_words = Vec::with_capacity(num_words);
 
         for _ in 0..num_words {
@@ -402,7 +398,7 @@ fn generate_test_data(count: usize) -> Vec<String> {
         }
 
         // Add a small number for uniqueness
-        let number = rng.gen_range(1..100);
+        let number = rng.random_range(1..100);
         items.push(format!("{}_{}", selected_words.join("_"), number));
     }
 
@@ -433,7 +429,7 @@ fn print_statistics(
     for level in 0..filter.config.max_levels {
         let set_bits = filter.storage.levels[level]
             .iter()
-            .filter(|&&bit| bit)
+            .filter(|bit| **bit)
             .count();
         let density =
             (set_bits as f64 / filter.storage.levels[level].len() as f64) * 100.0;

@@ -10,7 +10,7 @@ use tracing::debug;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::filter::SlidingBloomFilter;
+use crate::filter::ExpiringBloomFilter;
 use crate::types::{AppState, ErrorResponse, InsertRequest, QueryResponse};
 
 #[derive(OpenApi)]

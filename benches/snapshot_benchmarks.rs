@@ -1,6 +1,6 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use expiring_bloom_rs::{
-    FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder, SlidingBloomFilter,
+    ExpiringBloomFilter, FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder,
 };
 use rand::{Rng, distr::Alphanumeric};
 use std::{fs, path::PathBuf, time::Duration};

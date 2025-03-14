@@ -1,5 +1,9 @@
 #[cfg(test)]
+mod common;
+
+#[cfg(test)]
 mod tests {
+    use crate::common::test_utils::TestDb;
     use axum::{
         Router,
         body::{self, Body},
@@ -14,14 +18,24 @@ mod tests {
     use std::{sync::Arc, time::Duration};
     use tower::util::ServiceExt;
 
-    async fn setup_test_app() -> Router {
-        use rand::random;
+    async fn setup_test_app(test_name: &str) -> Router {
+        let test_db = TestDb::new(&format!("server_test_{}", test_name));
+
+        // NOTE: Yes, it's ugly, but why not?
+        let port = match test_name {
+            "health_check" => 50001,
+            "insert_and_query" => 50002,
+            "cleanup" => 50003,
+            "expiration" => 50004,
+            _ => 50000, // Default port for any other tests
+        };
 
         let test_config = ServerConfigBuilder::default()
-            .server_port(random::<u16>() % 10000 + 50000) // Random high port
-            .bloom_db_path(format!("test_bloom_{}.redb", random::<u64>()))
+            .server_port(port)
+            .bloom_db_path(test_db.path_string())
             .build()
             .unwrap();
+
         let filter_config = FilterConfigBuilder::default()
             .capacity(100)
             .false_positive_rate(0.01)
@@ -30,7 +44,6 @@ mod tests {
             .build()
             .unwrap();
 
-        // Create RedbFilterConfig using the builder
         let redb_config = RedbFilterConfigBuilder::default()
             .db_path(test_config.bloom_db_path.into())
             .filter_config(Some(filter_config))
@@ -49,7 +62,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_check() {
-        let app = setup_test_app().await;
+        let app = setup_test_app("health").await;
 
         let response = app
             .oneshot(
@@ -66,7 +79,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_query() {
-        let app = setup_test_app().await;
+        let app = setup_test_app("insert_and_query").await;
         let test_value = "test_item";
 
         // Test insert
@@ -131,7 +144,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cleanup() {
-        let app = setup_test_app().await;
+        let app = setup_test_app("cleanup").await;
 
         let response = app
             .oneshot(
@@ -149,7 +162,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_expiration() {
-        let app = setup_test_app().await;
+        let app = setup_test_app("expiration").await;
         let test_value = "expiring_item";
 
         // Insert item

@@ -1,9 +1,10 @@
 use crate::{
     error::{FilterError, Result},
-    filter::{FilterConfig, SlidingBloomFilter},
+    filter::{ExpiringBloomFilter, FilterConfig},
     hash::{default_hash_function, optimal_bit_vector_size, optimal_num_hashes},
-    storage::{BloomStorage, InMemoryStorage},
+    storage::{FilterStorage, InMemoryStorage},
 };
+use bitvec::{bitvec, order::Lsb0};
 use derive_builder::Builder;
 use redb::{Database, TableDefinition};
 use std::{
@@ -157,15 +158,6 @@ impl RedbFilter {
             .get("filter_config")
             .map_err(redb::Error::from)?
         {
-            // Deserialize config
-            // let (capacity, false_positive_rate, max_levels, level_duration): (
-            //     usize,
-            //     f64,
-            //     usize,
-            //     Duration,
-            // ) = bincode::deserialize(config_bytes.value())
-            //     .map_err(|e| BloomError::SerializationError(e.to_string()))?;
-
             let (capacity, false_positive_rate, max_levels, level_duration): (
                 usize,
                 f64,
@@ -233,7 +225,14 @@ impl RedbFilter {
                     let bit_vec: Vec<bool> =
                         bits.value().iter().map(|&byte| byte != 0).collect();
                     if bit_vec.len() == self.config.capacity {
-                        self.storage.levels[level] = bit_vec;
+                        // TODO: fix this
+                        // self.storage.levels[level] = bit_vec;
+                        let mut bit_vec_new =
+                            bitvec![usize, Lsb0; 0; self.config.capacity];
+                        for (i, &val) in bit_vec.iter().enumerate() {
+                            bit_vec_new.set(i, val);
+                        }
+                        self.storage.levels[level] = bit_vec_new;
                     }
                 }
             }
@@ -271,7 +270,7 @@ impl RedbFilter {
 
             for (level, bits) in self.storage.levels.iter().enumerate() {
                 let bytes: Vec<u8> =
-                    bits.iter().map(|&b| if b { 1u8 } else { 0u8 }).collect();
+                    bits.iter().map(|b| if *b { 1u8 } else { 0u8 }).collect();
                 bits_table
                     .insert(&(level as u8), bytes.as_slice())
                     .map_err(redb::Error::from)?;
@@ -327,7 +326,7 @@ impl RedbFilter {
     }
 }
 
-impl SlidingBloomFilter for RedbFilter {
+impl ExpiringBloomFilter for RedbFilter {
     fn insert(&mut self, item: &[u8]) -> Result<()> {
         if self.should_create_new_level()? {
             self.create_new_level()?;

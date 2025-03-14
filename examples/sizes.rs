@@ -1,5 +1,5 @@
 use expiring_bloom_rs::{
-    FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder, SlidingBloomFilter,
+    ExpiringBloomFilter, FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder,
 };
 use rand::{Rng, distr::Alphanumeric};
 use std::{

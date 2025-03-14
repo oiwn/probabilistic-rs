@@ -1,13 +1,14 @@
 #+title: Notes
 
 * Ideas
-** probably less storage size for redb would mean better performance, i.e. need to use bitvec
+** rwlock on database to allow access from other threads.
+** DONE probably less storage size for redb would mean better performance, i.e. need to use bitvec
 ** DONE cli tool (clap)
 ** DONE TUI (to visualise data)
 ** DONE backend for redb using redb crate
 ** TODO https://github.com/Cyan4973/xxHash - maybe check this hash?
 https://docs.rs/twox-hash/latest/twox_hash/
-** TODO I think need one hash function
+** TODO I think need one meta-hash function
 instead of K hash function can use composite hash function which will create K different hashes
 using so called 2 hash trick:
 ```python

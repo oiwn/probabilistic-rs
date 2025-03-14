@@ -1,7 +1,7 @@
 use crate::error::{FilterError, Result};
-use crate::filter::{FilterConfig, SlidingBloomFilter};
+use crate::filter::{ExpiringBloomFilter, FilterConfig};
 use crate::hash::{optimal_bit_vector_size, optimal_num_hashes};
-use crate::storage::{BloomStorage, InMemoryStorage};
+use crate::storage::{FilterStorage, InMemoryStorage};
 use std::time::SystemTime;
 
 // Base filter implementation
@@ -53,7 +53,7 @@ impl InMemoryFilter {
     }
 }
 
-impl SlidingBloomFilter for InMemoryFilter {
+impl ExpiringBloomFilter for InMemoryFilter {
     fn insert(&mut self, item: &[u8]) -> Result<()> {
         if self.should_create_new_level()? {
             self.create_new_level()?;
@@ -139,7 +139,7 @@ impl std::fmt::Debug for InMemoryFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::filter::{FilterConfigBuilder, SlidingBloomFilter};
+    use crate::filter::{ExpiringBloomFilter, FilterConfigBuilder};
     use crate::hash::{hash_fnv32, hash_murmur32};
     use rand::Rng;
     use std::thread;
