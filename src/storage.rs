@@ -3,7 +3,7 @@ use bitvec::{
     order::Lsb0,
     prelude::{BitVec, bitvec},
 };
-use std::time::SystemTime;
+use std::{sync::RwLock, time::SystemTime};
 
 // Trait for the storage backend
 pub trait FilterStorage {
@@ -28,9 +28,8 @@ pub trait FilterStorage {
 
 // In-memory storage implementation
 pub struct InMemoryStorage {
-    // pub levels: Vec<Vec<bool>>,
-    pub levels: Vec<BitVec<usize, Lsb0>>,
-    pub timestamps: Vec<SystemTime>,
+    pub levels: RwLock<Vec<BitVec<usize, Lsb0>>>,
+    pub timestamps: RwLock<Vec<SystemTime>>,
     pub capacity: usize,
 }
 
@@ -38,9 +37,8 @@ impl InMemoryStorage {
     pub fn new(capacity: usize, max_levels: usize) -> Result<Self> {
         let levels = (0..max_levels).map(|_| bitvec![0; capacity]).collect();
         Ok(Self {
-            levels,
-            // levels: vec![vec![false; capacity]; max_levels],
-            timestamps: vec![SystemTime::now(); max_levels],
+            levels: RwLock::new(levels),
+            timestamps: RwLock::new(vec![SystemTime::now(); max_levels]),
             capacity,
         })
     }
@@ -48,10 +46,16 @@ impl InMemoryStorage {
 
 impl FilterStorage for InMemoryStorage {
     fn set_bits(&mut self, level: usize, indices: &[usize]) -> Result<()> {
-        if level >= self.levels.len() {
+        let mut levels = self.levels.write().map_err(|e| {
+            FilterError::StorageError(format!(
+                "Failed to acquire write lock: {}",
+                e
+            ))
+        })?;
+        if level >= levels.len() {
             return Err(FilterError::InvalidLevel {
                 level,
-                max_levels: self.levels.len(),
+                max_levels: levels.len(),
             });
         }
 
@@ -67,19 +71,22 @@ impl FilterStorage for InMemoryStorage {
 
         // Set all bits in one go
         for &index in indices {
-            self.levels[level].set(index, true);
+            levels[level].set(index, true);
         }
-        // for &index in indices {
-        //     self.levels[level][index] = true;
-        // }
         Ok(())
     }
 
     fn get_bits(&self, level: usize, indices: &[usize]) -> Result<Vec<bool>> {
-        if level >= self.levels.len() {
+        let levels = self.levels.read().map_err(|e| {
+            FilterError::StorageError(format!(
+                "Failed to acquire read lock: {}",
+                e
+            ))
+        })?;
+        if level >= levels.len() {
             return Err(FilterError::InvalidLevel {
                 level,
-                max_levels: self.levels.len(),
+                max_levels: levels.len(),
             });
         }
 
@@ -94,20 +101,23 @@ impl FilterStorage for InMemoryStorage {
         }
 
         // Get all bits in one go
-        Ok(indices
-            .iter()
-            .map(|&index| self.levels[level][index])
-            .collect())
+        Ok(indices.iter().map(|&index| levels[level][index]).collect())
     }
 
     fn clear_level(&mut self, level: usize) -> Result<()> {
-        if level >= self.levels.len() {
+        let mut levels = self.levels.write().map_err(|e| {
+            FilterError::StorageError(format!(
+                "Failed to acquire write lock: {}",
+                e
+            ))
+        })?;
+        if level >= levels.len() {
             return Err(FilterError::InvalidLevel {
                 level,
-                max_levels: self.levels.len(),
+                max_levels: levels.len(),
             });
         }
-        self.levels[level].fill(false);
+        levels[level].fill(false);
         // self.levels[level] = vec![false; self.capacity];
         Ok(())
     }
@@ -117,29 +127,44 @@ impl FilterStorage for InMemoryStorage {
         level: usize,
         timestamp: SystemTime,
     ) -> Result<()> {
-        if level >= self.timestamps.len() {
+        let mut timestamps = self.timestamps.write().map_err(|e| {
+            FilterError::StorageError(format!(
+                "Failed to acquire write lock: {}",
+                e
+            ))
+        })?;
+        if level >= timestamps.len() {
             return Err(FilterError::InvalidLevel {
                 level,
-                max_levels: self.timestamps.len(),
+                max_levels: timestamps.len(),
             });
         }
 
-        self.timestamps[level] = timestamp;
+        timestamps[level] = timestamp;
         Ok(())
     }
 
     fn get_timestamp(&self, level: usize) -> Result<Option<SystemTime>> {
-        if level >= self.timestamps.len() {
+        let timestamps = self.timestamps.read().map_err(|e| {
+            FilterError::StorageError(format!(
+                "Failed to acquire read lock: {}",
+                e
+            ))
+        })?;
+        if level >= timestamps.len() {
             return Err(FilterError::InvalidLevel {
                 level,
-                max_levels: self.timestamps.len(),
+                max_levels: timestamps.len(),
             });
         }
 
-        Ok(Some(self.timestamps[level]))
+        Ok(Some(timestamps[level]))
     }
 
     fn num_levels(&self) -> usize {
-        self.levels.len()
+        match self.levels.read() {
+            Ok(levels) => levels.len(),
+            Err(_) => 0, // Consider how to handle this error case
+        }
     }
 }

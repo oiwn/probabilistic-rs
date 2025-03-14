@@ -232,7 +232,7 @@ impl RedbFilter {
                         for (i, &val) in bit_vec.iter().enumerate() {
                             bit_vec_new.set(i, val);
                         }
-                        self.storage.levels[level] = bit_vec_new;
+                        self.storage.levels.write().unwrap()[level] = bit_vec_new;
                     }
                 }
             }
@@ -249,7 +249,7 @@ impl RedbFilter {
                             bincode::config::standard(),
                         )
                     {
-                        self.storage.timestamps[level] =
+                        self.storage.timestamps.write().unwrap()[level] =
                             SystemTime::UNIX_EPOCH + duration;
                     }
                 }
@@ -268,7 +268,9 @@ impl RedbFilter {
                 .open_table(BITS_TABLE)
                 .map_err(redb::Error::from)?;
 
-            for (level, bits) in self.storage.levels.iter().enumerate() {
+            for (level, bits) in
+                self.storage.levels.read().unwrap().iter().enumerate()
+            {
                 let bytes: Vec<u8> =
                     bits.iter().map(|b| if *b { 1u8 } else { 0u8 }).collect();
                 bits_table
@@ -283,7 +285,8 @@ impl RedbFilter {
                 .open_table(TIMESTAMPS_TABLE)
                 .map_err(redb::Error::from)?;
 
-            for (level, &timestamp) in self.storage.timestamps.iter().enumerate()
+            for (level, &timestamp) in
+                self.storage.timestamps.read().unwrap().iter().enumerate()
             {
                 let duration =
                     timestamp.duration_since(SystemTime::UNIX_EPOCH)?;

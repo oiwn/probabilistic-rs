@@ -528,7 +528,7 @@ fn create_filter(db_path: &Path) -> RedbFilter {
 
 // Calculate average bit density in a bit vector
 fn calculate_bit_density(filter: &RedbFilter, level: usize) -> f64 {
-    let level_bits = &filter.storage.levels[level];
+    let level_bits = &filter.storage.levels.read().unwrap()[level];
     // let set_bits = level_bits.iter().filter(|&&bit| bit).count();
     let set_bits = level_bits.iter().filter(|bit| **bit).count();
 

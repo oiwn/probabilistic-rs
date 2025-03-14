@@ -378,14 +378,14 @@ mod tests {
 
         // Should pass 5 seconds and have 5 levels!
         assert_eq!(
-            filter.storage.levels.len(),
+            filter.storage.levels.read().unwrap().len(),
             5,
             "After 5 seconds there is should be 5 levels of filter"
         );
 
         for i in 0..filter.storage.num_levels() {
             assert!(
-                !filter.storage.levels[i].is_empty(),
+                !filter.storage.levels.read().unwrap()[i].is_empty(),
                 "Each level should contain at least 1 elements"
             );
         }
