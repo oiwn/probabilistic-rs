@@ -1,7 +1,7 @@
 use crate::{
     error::{FilterError, Result},
     filter::{ExpiringBloomFilter, FilterConfig},
-    hash::{default_hash_function, optimal_bit_vector_size, optimal_num_hashes},
+    hash::{calculate_optimal_params, default_hash_function},
     storage::{FilterStorage, InMemoryStorage},
 };
 use bitvec::{bitvec, order::Lsb0};
@@ -98,12 +98,19 @@ impl RedbFilter {
             filter_config.capacity,
             filter_config.max_levels,
         )?;
-        let bit_vector_size = optimal_bit_vector_size(
+
+        let (_level_fpr, _bit_vector_size, num_hashes) = calculate_optimal_params(
             filter_config.capacity,
             filter_config.false_positive_rate,
+            filter_config.max_levels,
+            0.8, // Default active ratio
         );
-        let num_hashes =
-            optimal_num_hashes(filter_config.capacity, bit_vector_size);
+        // let bit_vector_size = optimal_bit_vector_size(
+        //     filter_config.capacity,
+        //     filter_config.false_positive_rate,
+        // );
+        // let num_hashes =
+        //     optimal_num_hashes(filter_config.capacity, bit_vector_size);
 
         // State for background thread coordination
         // let shutdown = Arc::new(AtomicBool::new(false));
@@ -131,15 +138,15 @@ impl RedbFilter {
         Ok(filter)
     }
 
-    pub fn get_config(&self) -> &FilterConfig {
+    pub fn config(&self) -> &FilterConfig {
         &self.config
     }
 
-    pub fn get_num_hashes(&self) -> usize {
+    pub fn num_hashes(&self) -> usize {
         self.num_hashes
     }
 
-    pub fn get_current_level_index(&self) -> usize {
+    pub fn current_level_index(&self) -> usize {
         self.current_level_index.load(Ordering::Relaxed)
     }
 
@@ -232,7 +239,7 @@ impl RedbFilter {
                         for (i, &val) in bit_vec.iter().enumerate() {
                             bit_vec_new.set(i, val);
                         }
-                        self.storage.levels[level] = bit_vec_new;
+                        self.storage.levels.write().unwrap()[level] = bit_vec_new;
                     }
                 }
             }
@@ -249,7 +256,7 @@ impl RedbFilter {
                             bincode::config::standard(),
                         )
                     {
-                        self.storage.timestamps[level] =
+                        self.storage.timestamps.write().unwrap()[level] =
                             SystemTime::UNIX_EPOCH + duration;
                     }
                 }
@@ -268,7 +275,9 @@ impl RedbFilter {
                 .open_table(BITS_TABLE)
                 .map_err(redb::Error::from)?;
 
-            for (level, bits) in self.storage.levels.iter().enumerate() {
+            for (level, bits) in
+                self.storage.levels.read().unwrap().iter().enumerate()
+            {
                 let bytes: Vec<u8> =
                     bits.iter().map(|b| if *b { 1u8 } else { 0u8 }).collect();
                 bits_table
@@ -283,7 +292,8 @@ impl RedbFilter {
                 .open_table(TIMESTAMPS_TABLE)
                 .map_err(redb::Error::from)?;
 
-            for (level, &timestamp) in self.storage.timestamps.iter().enumerate()
+            for (level, &timestamp) in
+                self.storage.timestamps.read().unwrap().iter().enumerate()
             {
                 let duration =
                     timestamp.duration_since(SystemTime::UNIX_EPOCH)?;

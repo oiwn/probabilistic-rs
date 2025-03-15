@@ -31,6 +31,9 @@ pub enum FilterError {
         error: String,
     },
 
+    #[error("Lock poisoned: {0}")]
+    LockError(String),
+
     #[cfg(feature = "redb")]
     #[error("ReDB error: {0}")]
     RedbError(#[from] redb::Error),

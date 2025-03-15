@@ -1,68 +1,19 @@
-#[cfg(test)]
 mod common;
 
 #[cfg(test)]
 mod tests {
-    use crate::common::test_utils::TestDb;
+    use crate::common::test_utils::setup_test_app;
     use axum::{
-        Router,
         body::{self, Body},
         http::{Request, StatusCode},
     };
-    use expiring_bloom_rs::api::create_router;
-    use expiring_bloom_rs::{
-        AppState, FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder,
-        ServerConfigBuilder,
-    };
     use serde_json::json;
-    use std::{sync::Arc, time::Duration};
+    use std::time::Duration;
     use tower::util::ServiceExt;
-
-    async fn setup_test_app(test_name: &str) -> Router {
-        let test_db = TestDb::new(&format!("server_test_{}", test_name));
-
-        // NOTE: Yes, it's ugly, but why not?
-        let port = match test_name {
-            "health_check" => 50001,
-            "insert_and_query" => 50002,
-            "cleanup" => 50003,
-            "expiration" => 50004,
-            _ => 50000, // Default port for any other tests
-        };
-
-        let test_config = ServerConfigBuilder::default()
-            .server_port(port)
-            .bloom_db_path(test_db.path_string())
-            .build()
-            .unwrap();
-
-        let filter_config = FilterConfigBuilder::default()
-            .capacity(100)
-            .false_positive_rate(0.01)
-            .level_duration(Duration::from_secs(1))
-            .max_levels(3)
-            .build()
-            .unwrap();
-
-        let redb_config = RedbFilterConfigBuilder::default()
-            .db_path(test_config.bloom_db_path.into())
-            .filter_config(Some(filter_config))
-            .snapshot_interval(Duration::from_secs(10))
-            .build()
-            .unwrap();
-
-        let filter = RedbFilter::new(redb_config).unwrap();
-
-        let state = Arc::new(AppState {
-            filter: tokio::sync::Mutex::new(filter),
-        });
-
-        create_router(state)
-    }
 
     #[tokio::test]
     async fn test_health_check() {
-        let app = setup_test_app("health").await;
+        let app = setup_test_app("health", 1000).await;
 
         let response = app
             .oneshot(
@@ -79,7 +30,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_query() {
-        let app = setup_test_app("insert_and_query").await;
+        let app = setup_test_app("insert_and_query", 1000).await;
         let test_value = "test_item";
 
         // Test insert
@@ -143,8 +94,9 @@ mod tests {
     }
 
     #[tokio::test]
+    // FIXME: what it testing? need to check clenup
     async fn test_cleanup() {
-        let app = setup_test_app("cleanup").await;
+        let app = setup_test_app("cleanup", 100).await;
 
         let response = app
             .oneshot(
@@ -162,7 +114,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_expiration() {
-        let app = setup_test_app("expiration").await;
+        let app = setup_test_app("expiration", 1000).await;
         let test_value = "expiring_item";
 
         // Insert item

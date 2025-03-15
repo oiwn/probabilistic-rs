@@ -138,10 +138,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // This is reimplemenatation of insert:
             // filter.insert(item.as_bytes())?;
             // because i need to drop it into the different levels
-            let indices: Vec<usize> = (filter.get_config().hash_function)(
+            let indices: Vec<usize> = (filter.config().hash_function)(
                 item.as_bytes(),
-                filter.get_num_hashes(),
-                filter.get_config().capacity,
+                filter.num_hashes(),
+                filter.config().capacity,
             )
             .into_iter()
             .map(|h| h as usize)
@@ -528,8 +528,7 @@ fn create_filter(db_path: &Path) -> RedbFilter {
 
 // Calculate average bit density in a bit vector
 fn calculate_bit_density(filter: &RedbFilter, level: usize) -> f64 {
-    let level_bits = &filter.storage.levels[level];
-    // let set_bits = level_bits.iter().filter(|&&bit| bit).count();
+    let level_bits = &filter.storage.levels.read().unwrap()[level];
     let set_bits = level_bits.iter().filter(|bit| **bit).count();
 
     set_bits as f64 / level_bits.len() as f64
