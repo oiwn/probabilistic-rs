@@ -1,7 +1,7 @@
 use axum::Router;
 use expiring_bloom_rs::{
     AppState, FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder,
-    ServerConfigBuilder, api::create_router,
+    api::create_router,
 };
 use std::{fs, path::PathBuf};
 use std::{sync::Arc, time::Duration};
@@ -26,8 +26,6 @@ impl TestDb {
     }
 
     /// Get the database path as a string
-    // FIXME: btw this is detected as dead code while it's not
-    #[allow(dead_code)]
     pub fn path_string(&self) -> String {
         self.path.to_string_lossy().to_string()
     }
@@ -41,44 +39,43 @@ impl Drop for TestDb {
     }
 }
 
-pub fn setup_test_redb(db_path: &str, capacity: usize) -> RedbFilter {
+pub fn setup_test_redb(
+    db_path: &str,
+    capacity: usize,
+    level_duration: Duration,
+    max_levels: usize,
+    snapshot_interval: Duration,
+) -> RedbFilter {
     let filter_config = FilterConfigBuilder::default()
         .capacity(capacity)
         .false_positive_rate(0.01)
-        .level_duration(Duration::from_secs(1))
-        .max_levels(3)
+        .level_duration(level_duration)
+        .max_levels(max_levels)
         .build()
         .unwrap();
 
     let redb_config = RedbFilterConfigBuilder::default()
         .db_path(PathBuf::from(db_path))
         .filter_config(Some(filter_config))
-        .snapshot_interval(Duration::from_secs(10))
+        .snapshot_interval(snapshot_interval)
         .build()
         .unwrap();
 
-    RedbFilter::new(redb_config).unwrap()
+    RedbFilter::new(redb_config).expect("Unable to create filter...")
 }
 
+// FIXME: btw this is detected as dead code while it's not
+#[allow(dead_code)]
 pub async fn setup_test_app(test_name: &str, capacity: usize) -> Router {
     let test_db = TestDb::new(&format!("server_test_{}", test_name));
 
-    // NOTE: Yes, it's ugly, but why not?
-    let port = match test_name {
-        "health_check" => 50001,
-        "insert_and_query" => 50002,
-        "cleanup" => 50003,
-        "expiration" => 50004,
-        _ => 50000, // Default port for any other tests
-    };
-
-    let test_config = ServerConfigBuilder::default()
-        .server_port(port)
-        .bloom_db_path(test_db.path_string())
-        .build()
-        .unwrap();
-
-    let filter = setup_test_redb(&test_db.path_string(), capacity);
+    let filter = setup_test_redb(
+        &test_db.path_string(),
+        capacity,
+        Duration::from_secs(1),
+        3,
+        Duration::from_secs(60),
+    );
 
     let state = Arc::new(AppState {
         filter: tokio::sync::Mutex::new(filter),
