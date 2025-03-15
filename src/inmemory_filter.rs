@@ -1,6 +1,6 @@
 use crate::error::{FilterError, Result};
 use crate::filter::{ExpiringBloomFilter, FilterConfig};
-use crate::hash::{optimal_bit_vector_size, optimal_num_hashes};
+use crate::hash::calculate_optimal_params;
 use crate::storage::{FilterStorage, InMemoryStorage};
 use std::time::SystemTime;
 
@@ -15,9 +15,17 @@ pub struct InMemoryFilter {
 impl InMemoryFilter {
     pub fn new(config: FilterConfig) -> Result<Self> {
         let storage = InMemoryStorage::new(config.capacity, config.max_levels)?;
-        let bit_vector_size =
-            optimal_bit_vector_size(config.capacity, config.false_positive_rate);
-        let num_hashes = optimal_num_hashes(config.capacity, bit_vector_size);
+
+        // let bit_vector_size =
+        //     optimal_bit_vector_size(config.capacity, config.false_positive_rate);
+        // let num_hashes = optimal_num_hashes(config.capacity, bit_vector_size);
+
+        let (_level_fpr, _bit_vector_size, num_hashes) = calculate_optimal_params(
+            config.capacity,
+            config.false_positive_rate,
+            config.max_levels,
+            0.8, // Default active ratio
+        );
 
         Ok(Self {
             storage,
@@ -25,6 +33,10 @@ impl InMemoryFilter {
             num_hashes,
             current_level_index: 0,
         })
+    }
+
+    pub fn config(&self) -> &FilterConfig {
+        &self.config
     }
 
     pub fn should_create_new_level(&self) -> Result<bool> {
@@ -268,8 +280,8 @@ mod tests {
         let config = FilterConfigBuilder::default()
             .capacity(100)
             .false_positive_rate(0.01)
-            .level_duration(Duration::from_secs(1))
-            .max_levels(3)
+            .level_duration(Duration::from_millis(200))
+            .max_levels(4)
             .build()
             .expect("Unable to build FilterConfig");
 
@@ -280,7 +292,7 @@ mod tests {
         assert!(filter.query(b"test_item").unwrap());
 
         // Wait for total decay time
-        thread::sleep(Duration::from_secs(4));
+        thread::sleep(Duration::from_secs(1));
         filter.cleanup_expired_levels().unwrap();
         assert!(
             !filter.query(b"test_item").unwrap(),
@@ -607,5 +619,67 @@ mod tests {
 
         // Levels should have been created appropriately
         assert!(filter.storage.num_levels() <= MAX_LEVELS);
+    }
+
+    #[test]
+    fn test_level_cleanup_effectiveness() {
+        // Create a filter with longer expiration times to avoid timing issues
+        let config = FilterConfigBuilder::default()
+            .capacity(1000)
+            .false_positive_rate(0.01)
+            .level_duration(Duration::from_millis(500)) // Longer duration
+            .max_levels(5)
+            .build()
+            .unwrap();
+
+        let mut filter = InMemoryFilter::new(config).unwrap();
+
+        // Insert items in phases with time gaps
+        for phase in 0..3 {
+            println!("Starting phase {}", phase);
+
+            // Insert group of items
+            for i in 0..10 {
+                let item = format!("phase{}_item{}", phase, i);
+                filter.insert(item.as_bytes()).unwrap();
+            }
+
+            // Verify items exist
+            for i in 0..10 {
+                let item = format!("phase{}_item{}", phase, i);
+                assert!(
+                    filter.query(item.as_bytes()).unwrap(),
+                    "Item should exist immediately after insertion"
+                );
+            }
+
+            // Print current level and timestamp
+            println!(
+                "Current level after insertion: {}",
+                filter.current_level_index
+            );
+            if let Ok(Some(ts)) =
+                filter.storage.get_timestamp(filter.current_level_index)
+            {
+                println!("Current level timestamp: {:?}", ts);
+            }
+
+            // Wait for LESS than full expiration (just enough to rotate levels)
+            let wait_time = filter.config().level_duration.as_millis() * 2; // 2 level rotations
+            println!("Waiting for {} ms", wait_time);
+            thread::sleep(Duration::from_millis(wait_time as u64));
+
+            // Run cleanup
+            filter.cleanup_expired_levels().unwrap();
+            println!("After cleanup");
+
+            // Current phase items should still exist
+            for i in 0..10 {
+                let item = format!("phase{}_item{}", phase, i);
+                let exists = filter.query(item.as_bytes()).unwrap();
+                println!("Item {} exists: {}", item, exists);
+                assert!(exists, "Item from current phase should exist");
+            }
+        }
     }
 }

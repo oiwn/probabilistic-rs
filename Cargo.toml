@@ -67,6 +67,7 @@ default = ["redb", "server", "cli"]
 redb = ["dep:redb"]
 server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde", "dep:serde_json", "dep:dotenvy", "dep:redb"]
 cli = ["dep:clap", "dep:ratatui", "dep:unicode-width", "redb"]
+tests = []
 
 [[bench]]
 name = "bloom_benchmarks"

@@ -194,7 +194,7 @@ fn handle_load_command(
             }
         }
         LoadCommands::Info => {
-            let filter_config = filter.get_config();
+            let filter_config = filter.config();
             println!("Bloom Filter Configuration:");
             println!("  Database path: {}", db_path.display());
             println!("  Capacity: {}", filter_config.capacity);
@@ -218,10 +218,7 @@ fn handle_load_command(
 
             // Try to estimate current usage
             println!("\nCurrent State:");
-            println!(
-                "  Current level index: {}",
-                filter.get_current_level_index()
-            );
+            println!("  Current level index: {}", filter.current_level_index());
         }
         LoadCommands::Cleanup { force } => {
             if *force

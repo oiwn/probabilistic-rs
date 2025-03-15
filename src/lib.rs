@@ -1,4 +1,4 @@
-//! Time-Decaying Bloom Filter implementation with multiple storage backends.
+//! Time-Decaying Bloom Filter implementation with ReDB or InMemory storage backends.
 //!
 //! This crate provides a Bloom filter implementation that automatically expires
 //! elements after a configurable time period using a sliding window approach.
@@ -29,6 +29,8 @@
 
 #[cfg(feature = "server")]
 pub mod api;
+#[cfg(test)]
+pub mod common;
 mod error;
 mod filter;
 mod hash;

@@ -1,4 +1,10 @@
+use axum::Router;
+use expiring_bloom_rs::{
+    AppState, FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder,
+    ServerConfigBuilder, api::create_router,
+};
 use std::{fs, path::PathBuf};
+use std::{sync::Arc, time::Duration};
 
 /// Structure to manage temporary test databases that are automatically cleaned up
 pub struct TestDb {
@@ -33,4 +39,50 @@ impl Drop for TestDb {
             let _ = fs::remove_file(&self.path);
         }
     }
+}
+
+pub fn setup_test_redb(db_path: &str, capacity: usize) -> RedbFilter {
+    let filter_config = FilterConfigBuilder::default()
+        .capacity(capacity)
+        .false_positive_rate(0.01)
+        .level_duration(Duration::from_secs(1))
+        .max_levels(3)
+        .build()
+        .unwrap();
+
+    let redb_config = RedbFilterConfigBuilder::default()
+        .db_path(PathBuf::from(db_path))
+        .filter_config(Some(filter_config))
+        .snapshot_interval(Duration::from_secs(10))
+        .build()
+        .unwrap();
+
+    RedbFilter::new(redb_config).unwrap()
+}
+
+pub async fn setup_test_app(test_name: &str, capacity: usize) -> Router {
+    let test_db = TestDb::new(&format!("server_test_{}", test_name));
+
+    // NOTE: Yes, it's ugly, but why not?
+    let port = match test_name {
+        "health_check" => 50001,
+        "insert_and_query" => 50002,
+        "cleanup" => 50003,
+        "expiration" => 50004,
+        _ => 50000, // Default port for any other tests
+    };
+
+    let test_config = ServerConfigBuilder::default()
+        .server_port(port)
+        .bloom_db_path(test_db.path_string())
+        .build()
+        .unwrap();
+
+    let filter = setup_test_redb(&test_db.path_string(), capacity);
+
+    let state = Arc::new(AppState {
+        filter: tokio::sync::Mutex::new(filter),
+    });
+
+    create_router(state)
 }

@@ -1,7 +1,10 @@
 #+title: Notes
 
 * Ideas
-** rwlock on database to allow access from other threads.
+** Research bloom filter properties
+** python bindings
+** Actualize readme
+** DONE RwLock on database to allow access from other threads.
 ** DONE probably less storage size for redb would mean better performance, i.e. need to use bitvec
 ** DONE cli tool (clap)
 ** DONE TUI (to visualise data)

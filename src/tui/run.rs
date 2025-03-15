@@ -9,7 +9,7 @@ pub fn run_app<B: Backend>(
     mut app: App,
 ) -> io::Result<()> {
     // Initialize app with sensible defaults
-    app.current_view_level = app.filter.get_current_level_index();
+    app.current_view_level = app.filter.current_level_index();
     app.view_offset = 0;
     app.bits_per_row = 64; // Show 64 bits per row by default
 
@@ -54,11 +54,8 @@ pub fn run_app<B: Backend>(
                             // Scroll right in bit view
                             app.view_offset =
                                 app.view_offset.saturating_add(app.bits_per_row);
-                            let max_offset = app
-                                .filter
-                                .get_config()
-                                .capacity
-                                .saturating_sub(1);
+                            let max_offset =
+                                app.filter.config().capacity.saturating_sub(1);
                             if app.view_offset > max_offset {
                                 app.view_offset = max_offset;
                             }
@@ -71,7 +68,7 @@ pub fn run_app<B: Backend>(
                         KeyCode::Down => {
                             // Next level
                             app.current_view_level = (app.current_view_level + 1)
-                                % app.filter.get_config().max_levels;
+                                % app.filter.config().max_levels;
                             app.messages.push(AppMessage {
                                 content: format!(
                                     "Viewing level {}",
@@ -86,7 +83,7 @@ pub fn run_app<B: Backend>(
                                 app.current_view_level -= 1;
                             } else {
                                 app.current_view_level =
-                                    app.filter.get_config().max_levels - 1;
+                                    app.filter.config().max_levels - 1;
                             }
                             app.messages.push(AppMessage {
                                 content: format!(
@@ -137,9 +134,8 @@ pub fn run_app<B: Backend>(
                                                 msg_type: MessageType::Info,
                                             });
                                             // Update to current level after insertion
-                                            app.current_view_level = app
-                                                .filter
-                                                .get_current_level_index();
+                                            app.current_view_level =
+                                                app.filter.current_level_index();
                                         }
                                     }
                                     InputMode::Checking => {

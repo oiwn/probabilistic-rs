@@ -59,7 +59,7 @@ async fn main() {
     .expect("Failed to initialize Bloom filter");
 
     // Get the actual configuration (from DB or env)
-    let active_config = filter.get_config().clone();
+    let active_config = filter.config().clone();
 
     // Create application state
     let state = Arc::new(AppState {
