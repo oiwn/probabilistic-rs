@@ -1,3 +1,5 @@
+mod common;
+
 use expiring_bloom_rs::{
     ExpiringBloomFilter, FilterConfigBuilder, InMemoryFilter,
     tui::{App, AppMessage, InputMode, MessageType},
@@ -27,30 +29,6 @@ const FALSE_POSITIVE_RATE: f64 = 0.01;
 const LEVEL_DURATION_SECS: u64 = 5; // Short duration for demonstration
 const MAX_LEVELS: usize = 3;
 const DEMO_ITEMS: usize = 200; // Number of items to insert during demo
-
-// Word list for generating readable test items
-const WORD_LIST: [&str; 20] = [
-    "apple",
-    "banana",
-    "cherry",
-    "date",
-    "elderberry",
-    "fig",
-    "grape",
-    "honeydew",
-    "kiwi",
-    "lemon",
-    "mango",
-    "nectarine",
-    "orange",
-    "peach",
-    "quince",
-    "raspberry",
-    "strawberry",
-    "tangerine",
-    "watermelon",
-    "zucchini",
-];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create filter configuration
@@ -397,7 +375,7 @@ fn generate_test_data(count: usize) -> Vec<String> {
         let mut selected_words = Vec::with_capacity(num_words);
 
         for _ in 0..num_words {
-            selected_words.push(*WORD_LIST.choose(&mut rng).unwrap());
+            selected_words.push(*common::WORD_LIST.choose(&mut rng).unwrap());
         }
 
         // Add a small number for uniqueness

@@ -94,23 +94,15 @@ impl RedbFilter {
             (filter_config, db)
         };
 
-        let storage = InMemoryStorage::new(
-            filter_config.capacity,
-            filter_config.max_levels,
-        )?;
-
-        let (_level_fpr, _bit_vector_size, num_hashes) = calculate_optimal_params(
+        let (_level_fpr, bit_vector_size, num_hashes) = calculate_optimal_params(
             filter_config.capacity,
             filter_config.false_positive_rate,
             filter_config.max_levels,
             0.8, // Default active ratio
         );
-        // let bit_vector_size = optimal_bit_vector_size(
-        //     filter_config.capacity,
-        //     filter_config.false_positive_rate,
-        // );
-        // let num_hashes =
-        //     optimal_num_hashes(filter_config.capacity, bit_vector_size);
+
+        let storage =
+            InMemoryStorage::new(bit_vector_size, filter_config.max_levels)?;
 
         // State for background thread coordination
         // let shutdown = Arc::new(AtomicBool::new(false));
@@ -224,6 +216,8 @@ impl RedbFilter {
     fn load_state(&mut self) -> Result<()> {
         let read_txn = self.db.begin_read().map_err(redb::Error::from)?;
 
+        let bit_vector_size = self.storage.bit_vector_len();
+
         // Load bits
         if let Ok(bits_table) = read_txn.open_table(BITS_TABLE) {
             for level in 0..self.config.max_levels {
@@ -231,11 +225,9 @@ impl RedbFilter {
                 if let Ok(Some(bits)) = bits_table.get(&level_u8) {
                     let bit_vec: Vec<bool> =
                         bits.value().iter().map(|&byte| byte != 0).collect();
-                    if bit_vec.len() == self.config.capacity {
-                        // TODO: fix this
-                        // self.storage.levels[level] = bit_vec;
+                    if bit_vec.len() == bit_vector_size {
                         let mut bit_vec_new =
-                            bitvec![usize, Lsb0; 0; self.config.capacity];
+                            bitvec![usize, Lsb0; 0; bit_vector_size];
                         for (i, &val) in bit_vec.iter().enumerate() {
                             bit_vec_new.set(i, val);
                         }
@@ -302,8 +294,6 @@ impl RedbFilter {
                         .map_err(|e| {
                             FilterError::SerializationError(e.to_string())
                         })?;
-                // let ts_bytes = bincode::serialize(&duration)
-                //     .map_err(|e| BloomError::SerializationError(e.to_string()))?;
                 timestamps_table
                     .insert(&(level as u8), ts_bytes.as_slice())
                     .map_err(redb::Error::from)?;

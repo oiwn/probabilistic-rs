@@ -1,11 +1,13 @@
+mod common;
+
 use comfy_table::{
     Cell, CellAlignment, ContentArrangement, Table,
     modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL,
 };
+use common::{generate_random_string, generate_test_data};
 use expiring_bloom_rs::{
     ExpiringBloomFilter, FilterConfigBuilder, InMemoryFilter,
 };
-use rand::{Rng, distr::Alphanumeric};
 use std::{collections::HashSet, time::Duration};
 
 // Test configuration
@@ -13,20 +15,6 @@ const LEVEL_DURATION_MS: u64 = 100; // Short duration for testing
 const MAX_LEVELS: usize = 1;
 const FILL_RATIO: f64 = 0.5; // Fill the filter to 70% of capacity
 const TEST_SAMPLES: usize = 10_000; // Number of unknown elements to test for FPR
-
-// Helper function to generate random string data
-fn generate_random_string(len: usize) -> String {
-    rand::rng()
-        .sample_iter(&Alphanumeric)
-        .take(len)
-        .map(char::from)
-        .collect()
-}
-
-// Helper to create test data
-fn generate_test_data(count: usize) -> Vec<String> {
-    (0..count).map(|_| generate_random_string(32)).collect()
-}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("╔═══════════════════════════════════════════════════════════╗");

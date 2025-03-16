@@ -29,7 +29,6 @@
 
 #[cfg(feature = "server")]
 pub mod api;
-#[cfg(test)]
 pub mod common;
 mod error;
 mod filter;
