@@ -94,23 +94,15 @@ impl RedbFilter {
             (filter_config, db)
         };
 
-        let storage = InMemoryStorage::new(
-            filter_config.capacity,
-            filter_config.max_levels,
-        )?;
-
-        let (_level_fpr, _bit_vector_size, num_hashes) = calculate_optimal_params(
+        let (_level_fpr, bit_vector_size, num_hashes) = calculate_optimal_params(
             filter_config.capacity,
             filter_config.false_positive_rate,
             filter_config.max_levels,
             0.8, // Default active ratio
         );
-        // let bit_vector_size = optimal_bit_vector_size(
-        //     filter_config.capacity,
-        //     filter_config.false_positive_rate,
-        // );
-        // let num_hashes =
-        //     optimal_num_hashes(filter_config.capacity, bit_vector_size);
+
+        let storage =
+            InMemoryStorage::new(bit_vector_size, filter_config.max_levels)?;
 
         // State for background thread coordination
         // let shutdown = Arc::new(AtomicBool::new(false));

@@ -42,6 +42,37 @@ impl InMemoryStorage {
             capacity,
         })
     }
+
+    pub fn bit_vector_len(&self) -> usize {
+        self.levels.read().unwrap().first().unwrap().len()
+    }
+
+    // Calculate approximate amount of memory required to store levels
+    pub fn approx_memory_usage(&self) -> usize {
+        let mut total_bytes = 0;
+
+        // Calculate size of bit vectors
+        if let Ok(levels) = self.levels.read() {
+            for level in levels.iter() {
+                total_bytes += level.capacity() / 8;
+            }
+        }
+
+        // Calculate size of timestamps
+        if let Ok(timestamps) = self.timestamps.read() {
+            // Each SystemTime is typically two u64s
+            let timestamps_size =
+                timestamps.len() * std::mem::size_of::<SystemTime>();
+            let vec_overhead = 3 * std::mem::size_of::<usize>();
+
+            total_bytes += timestamps_size + vec_overhead;
+        }
+
+        // Add RwLock overhead (approximate)
+        let rwlock_overhead = 2 * std::mem::size_of::<usize>() * 2; // For both locks
+        total_bytes += rwlock_overhead;
+        total_bytes
+    }
 }
 
 impl FilterStorage for InMemoryStorage {

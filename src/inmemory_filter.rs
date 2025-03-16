@@ -14,18 +14,13 @@ pub struct InMemoryFilter {
 
 impl InMemoryFilter {
     pub fn new(config: FilterConfig) -> Result<Self> {
-        let storage = InMemoryStorage::new(config.capacity, config.max_levels)?;
-
-        // let bit_vector_size =
-        //     optimal_bit_vector_size(config.capacity, config.false_positive_rate);
-        // let num_hashes = optimal_num_hashes(config.capacity, bit_vector_size);
-
-        let (_level_fpr, _bit_vector_size, num_hashes) = calculate_optimal_params(
+        let (_level_fpr, bit_vector_size, num_hashes) = calculate_optimal_params(
             config.capacity,
             config.false_positive_rate,
             config.max_levels,
             0.8, // Default active ratio
         );
+        let storage = InMemoryStorage::new(bit_vector_size, config.max_levels)?;
 
         Ok(Self {
             storage,
@@ -37,6 +32,10 @@ impl InMemoryFilter {
 
     pub fn config(&self) -> &FilterConfig {
         &self.config
+    }
+
+    pub fn num_hashes(&self) -> usize {
+        self.num_hashes
     }
 
     pub fn should_create_new_level(&self) -> Result<bool> {
