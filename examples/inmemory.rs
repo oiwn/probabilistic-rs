@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let false_positive_rate = 0.01;
     let max_levels = 2;
     let level_duration = Duration::from_secs(60);
-    let fill_percentage = 10.0;
+    let fill_percentage = 20.0;
 
     // Print theoretical optimal parameters
     let optimal_size = optimal_bit_vector_size(capacity, false_positive_rate);

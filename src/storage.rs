@@ -47,7 +47,7 @@ impl InMemoryStorage {
         self.levels.read().unwrap().first().unwrap().len()
     }
 
-    // Calculate approximate amount of memory required to store levels
+    // Calculate approximate amount of memory in bytes required to store levels
     pub fn approx_memory_usage(&self) -> usize {
         let mut total_bytes = 0;
 
