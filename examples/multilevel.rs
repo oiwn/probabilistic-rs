@@ -1,4 +1,7 @@
 #![allow(clippy::needless_range_loop)]
+
+mod common;
+
 use colored::Colorize;
 use comfy_table::{
     ContentArrangement, Table, modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL,
@@ -23,30 +26,6 @@ const UNIQUE_ITEMS: usize = 500_000;
 const TRACEABLE_ITEMS: usize = 1_000;
 const ITEMS_PER_LEVEL: usize = 100_000;
 const OVERLAP_FACTOR: f64 = 0.33; // 33% overlap between levels
-
-// Basic word list for generating traceable items
-const WORD_LIST: [&str; 20] = [
-    "apple",
-    "banana",
-    "cherry",
-    "date",
-    "elderberry",
-    "fig",
-    "grape",
-    "honeydew",
-    "kiwi",
-    "lemon",
-    "mango",
-    "nectarine",
-    "orange",
-    "peach",
-    "quince",
-    "raspberry",
-    "strawberry",
-    "tangerine",
-    "watermelon",
-    "zucchini",
-];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Time-Decaying Bloom Filter Multi-Level Benchmark");
@@ -469,7 +448,7 @@ fn generate_traceable_items(count: usize) -> Vec<String> {
         let mut selected_words = Vec::with_capacity(num_words);
 
         for _ in 0..num_words {
-            selected_words.push(*WORD_LIST.choose(&mut rng).unwrap());
+            selected_words.push(*common::WORD_LIST.choose(&mut rng).unwrap());
         }
 
         // Add a unique identifier to ensure uniqueness
