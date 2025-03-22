@@ -74,7 +74,8 @@ impl ExpiringBloomFilter for InMemoryFilter {
         let indices: Vec<usize> = (self.config.hash_function)(
             item,
             self.num_hashes,
-            self.config.capacity,
+            // self.config.capacity,
+            self.storage.bit_vector_len(),
         )
         .into_iter()
         .map(|h| h as usize)
@@ -88,7 +89,8 @@ impl ExpiringBloomFilter for InMemoryFilter {
         let indices: Vec<usize> = (self.config.hash_function)(
             item,
             self.num_hashes,
-            self.config.capacity,
+            self.storage.bit_vector_len(),
+            // self.config.capacity,
         )
         .into_iter()
         .map(|h| h as usize)
