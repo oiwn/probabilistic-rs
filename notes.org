@@ -21,3 +21,9 @@ def get_hashes(key, k, m):
     for i in range(k):
         yield (h1 + i * h2) % m
 ```
+
+* Useful links
+
+** https://fjall-rs.github.io/post/bloom-filter-hash-sharing/ - great general description of bloom filters
+it has formulas, and some usable ideas
+** https://docs.rs/seahash/latest/seahash/ claims superiority over xxHash
