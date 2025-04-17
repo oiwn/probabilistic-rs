@@ -48,11 +48,12 @@ impl InMemoryStorage {
         self.levels.read().unwrap().first().unwrap().len()
     }
 
+    #[allow(unused)]
     fn estimate_bytes(lock: &RwLock<Vec<BitVec<usize, Lsb0>>>) -> usize {
         let guard = lock.read().unwrap();
         let vec = &*guard;
 
-        let mut total = size_of_val(&*lock); // size of RwLock struct
+        let mut total = size_of_val(lock); // size of RwLock struct
         total += size_of_val(vec); // Vec metadata
 
         for bv in vec {
@@ -91,6 +92,7 @@ impl InMemoryStorage {
         total_bytes
     }
 
+    #[allow(dead_code)]
     fn bitvec_to_bytes(bits: &BitVec<usize, Lsb0>) -> Vec<u8> {
         // We need to convert from bitvec's internal representation to bytes
         // First, get the bit count to store alongside the data
@@ -114,6 +116,7 @@ impl InMemoryStorage {
         result
     }
 
+    #[allow(unused)]
     fn bytes_to_bitvec(bytes: &[u8]) -> Result<BitVec<usize, Lsb0>> {
         if bytes.len() < 8 {
             return Err(FilterError::SerializationError(

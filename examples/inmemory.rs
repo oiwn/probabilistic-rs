@@ -66,14 +66,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Track all inserted items for false positive testing
-    let mut inserted_items = HashSet::with_capacity(insert_count);
+    // TODO: remove - let mut inserted_items = HashSet::with_capacity(insert_count);
     let start_time = std::time::Instant::now();
 
-    inserted_items = populate_filter_with_realistic_distribution(
+    let inserted_items = populate_filter_with_realistic_distribution(
         &mut filter,
         insert_count,
         0.5,
     )?;
+
+    println!("Inserted: {} items", inserted_items.len());
 
     // for _ in 0..insert_count {
     //     let item = common::generate_random_string(32);
@@ -139,6 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bit_density = calculate_bit_density(&filter);
 
     println!("\nBit Vector Analysis:");
+    #[allow(clippy::needless_range_loop)]
     for level in 0..filter.config.max_levels {
         println!(
             "  Level {}: {:.2}% of bits set ({} bits)",
@@ -285,104 +288,6 @@ fn populate_filter_with_realistic_distribution(
         num_levels
     );
     Ok(inserted_items)
-}
-
-// Function to distribute elements across levels with controlled overlap
-fn populate_filter_with_realistic_distribution_old(
-    filter: &mut InMemoryFilter,
-    total_items: usize,
-    overlap_factor: f64,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let num_levels = filter.config.max_levels;
-    let items_per_level = total_items / num_levels;
-
-    println!("Populating filter with realistic time-based distribution:");
-    println!("  • Total items: {}", total_items);
-    println!("  • Items per level: ~{}", items_per_level);
-    println!("  • Overlap factor: {:.1}%", overlap_factor * 100.0);
-
-    // Generate all test data first
-    let all_test_data = common::generate_test_data(total_items);
-
-    // Create distribution with controlled overlap between levels
-    let mut current_idx = 0;
-
-    for level in 0..num_levels {
-        println!("\nFilling level {}...", level);
-
-        // Calculate how many unique vs overlapped items for this level
-        let overlap_items = if level > 0 {
-            (items_per_level as f64 * overlap_factor).round() as usize
-        } else {
-            0
-        };
-
-        let unique_items = items_per_level - overlap_items;
-
-        // Insert unique items for this level
-        for i in 0..unique_items {
-            if current_idx >= all_test_data.len() {
-                break;
-            }
-
-            // Directly insert into the specific level (bypass normal insert)
-            let item = &all_test_data[current_idx];
-            insert_directly_into_level(filter, level, item.as_bytes())?;
-            current_idx += 1;
-
-            if i % (unique_items / 10).max(1) == 0 {
-                print!("{}%... ", (i * 100) / unique_items);
-                std::io::Write::flush(&mut std::io::stdout())?;
-            }
-        }
-
-        // Add overlap from previous level if needed
-        if level > 0 && overlap_items > 0 {
-            let mut rng = rand::rng();
-            // Get items from previous level to reuse
-            let prev_level_start = current_idx - unique_items - items_per_level;
-            let prev_level_end = prev_level_start + items_per_level;
-            let prev_level_range = prev_level_start..prev_level_end;
-
-            // Randomly choose items from previous level
-            let overlap_indices: Vec<_> = prev_level_range
-                .collect::<Vec<_>>()
-                .choose_multiple(&mut rng, overlap_items)
-                .cloned()
-                .collect();
-
-            println!(
-                "\nAdding {} overlapping items from previous level",
-                overlap_items
-            );
-
-            for idx in overlap_indices {
-                if idx < all_test_data.len() {
-                    let item = &all_test_data[idx];
-                    insert_directly_into_level(filter, level, item.as_bytes())?;
-                }
-            }
-        }
-
-        // Set timestamp for this level to simulate time passage
-        let now = std::time::SystemTime::now();
-        let level_age =
-            filter.config.level_duration * (num_levels - 1 - level) as u32 / 2;
-        let level_time = now - level_age;
-        filter.storage.set_timestamp(level, level_time)?;
-
-        println!(
-            "100% - Level {} complete with {}ms age",
-            level,
-            level_age.as_millis()
-        );
-    }
-
-    println!(
-        "\nFilter populated with realistic distribution across {} levels",
-        num_levels
-    );
-    Ok(())
 }
 
 // Helper function to insert directly into a specific level
