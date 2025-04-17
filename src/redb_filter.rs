@@ -203,7 +203,7 @@ impl RedbFilter {
             )
             .map_err(|e| FilterError::SerializationError(e.to_string()))?;
 
-            // Store in database
+            // Store in database if key exist it will be replaced
             config_table
                 .insert("filter_config", serialized.as_slice())
                 .map_err(redb::Error::from)?;

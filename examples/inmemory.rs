@@ -6,7 +6,6 @@ use expiring_bloom_rs::{
 };
 use rand::seq::IndexedRandom;
 use std::{collections::HashSet, time::Duration};
-use tokio::io::AsyncWriteExt;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Configuration

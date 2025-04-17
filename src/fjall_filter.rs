@@ -61,7 +61,7 @@ impl FjallFilter {
             // Database exists, try to load configuration
             match Self::load_config(&keyspace)? {
                 Some(loaded_config) => loaded_config,
-                None => {
+                _ => {
                     return Err(FilterError::StorageError(
                         "Database exists but no configuration found".to_string(),
                     ));
