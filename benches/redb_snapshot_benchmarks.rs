@@ -51,15 +51,15 @@ fn create_test_filter(db_path: PathBuf, capacity: usize) -> RedbFilter {
 }
 
 // Benchmark snapshot performance
-fn bench_snapshots(c: &mut Criterion) {
-    let mut group = c.benchmark_group("snapshot_operations");
+fn bench_redb_snapshots(c: &mut Criterion) {
+    let mut group = c.benchmark_group("redb_snapshot_operations");
     group.sample_size(10); // Reduce sample size for disk operations
     group.measurement_time(Duration::from_secs(15));
 
     // Test different capacities
     for capacity in [1_000, 10_000] {
         // Create database path for this benchmark
-        let db_path = temp_db_path(&format!("snapshot_bench_{}", capacity));
+        let db_path = temp_db_path(&format!("redb_snapshot_bench_{}", capacity));
         let test_data = generate_test_data(capacity);
 
         // Setup benchmark that measures snapshot time after inserting elements
@@ -97,8 +97,8 @@ fn bench_snapshots(c: &mut Criterion) {
 }
 
 // Benchmark snapshot with increasing fill levels
-fn bench_snapshot_fill_levels(c: &mut Criterion) {
-    let mut group = c.benchmark_group("snapshot_fill_levels");
+fn bench_redb_snapshot_fill_levels(c: &mut Criterion) {
+    let mut group = c.benchmark_group("redb_snapshot_fill_levels");
     group.sample_size(10);
 
     // Fixed capacity, vary fill percentage
@@ -106,7 +106,8 @@ fn bench_snapshot_fill_levels(c: &mut Criterion) {
 
     for fill_percentage in [25, 50, 75, 100] {
         let fill_count = (capacity * fill_percentage) / 100;
-        let db_path = temp_db_path(&format!("snapshot_fill_{}", fill_percentage));
+        let db_path =
+            temp_db_path(&format!("redb_snapshot_fill_{}", fill_percentage));
         let test_data = generate_test_data(fill_count);
 
         group.bench_with_input(
@@ -140,15 +141,16 @@ fn bench_snapshot_fill_levels(c: &mut Criterion) {
 }
 
 // Benchmark multi-level effects on snapshots
-fn bench_multi_level_snapshots(c: &mut Criterion) {
-    let mut group = c.benchmark_group("multi_level_snapshots");
+fn bench_redb_multi_level_snapshots(c: &mut Criterion) {
+    let mut group = c.benchmark_group("redb_multi_level_snapshots");
     group.sample_size(10);
 
     let capacity = 10_000;
     let item_count = 5_000;
 
     for level_count in [1, 2, 3, 5] {
-        let db_path = temp_db_path(&format!("snapshot_levels_{}", level_count));
+        let db_path =
+            temp_db_path(&format!("redb_snapshot_levels_{}", level_count));
         let test_data = generate_test_data(item_count);
 
         group.bench_with_input(
@@ -206,8 +208,8 @@ fn bench_multi_level_snapshots(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    bench_snapshots,
-    bench_snapshot_fill_levels,
-    bench_multi_level_snapshots
+    bench_redb_snapshots,
+    bench_redb_snapshot_fill_levels,
+    bench_redb_multi_level_snapshots
 );
 criterion_main!(benches);

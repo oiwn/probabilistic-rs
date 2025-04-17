@@ -32,6 +32,8 @@ pub mod api;
 pub mod common;
 mod error;
 mod filter;
+#[cfg(feature = "fjall")]
+mod fjall_filter;
 mod hash;
 mod inmemory_filter;
 #[cfg(feature = "redb")]
@@ -46,6 +48,10 @@ pub use error::{FilterError, Result};
 pub use filter::{
     ExpiringBloomFilter, FilterConfig, FilterConfigBuilder,
     FilterConfigBuilderError,
+};
+#[cfg(feature = "fjall")]
+pub use fjall_filter::{
+    FjallFilter, FjallFilterConfig, FjallFilterConfigBuilder,
 };
 pub use hash::{
     HashFunction, default_hash_function, optimal_bit_vector_size,
