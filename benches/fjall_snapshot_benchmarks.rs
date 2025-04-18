@@ -209,7 +209,7 @@ fn bench_fjall_multi_level_snapshots(c: &mut Criterion) {
 
 // Compare fjall vs redb
 fn bench_backend_comparison(c: &mut Criterion) {
-    let mut group = c.benchmark_group("storage_backend_comparison");
+    let mut group = c.benchmark_group("fjall_backend_comparison");
     group.sample_size(10);
 
     let capacity = 10_000;

@@ -246,7 +246,7 @@ impl FjallFilter {
                     for (i, &val) in bit_vec.iter().enumerate() {
                         bit_vec_new.set(i, val);
                     }
-                    self.storage.levels.write().unwrap()[level] = bit_vec_new;
+                    self.storage.levels[level] = bit_vec_new;
                 }
             }
         }
@@ -266,7 +266,7 @@ impl FjallFilter {
                     &ts_bytes,
                     bincode::config::standard(),
                 ) {
-                    self.storage.timestamps.write().unwrap()[level] =
+                    self.storage.timestamps[level] =
                         SystemTime::UNIX_EPOCH + duration;
                 }
             }
@@ -299,9 +299,7 @@ impl FjallFilter {
             })?;
 
         // Save bits
-        for (level, bits) in
-            self.storage.levels.read().unwrap().iter().enumerate()
-        {
+        for (level, bits) in self.storage.levels.iter().enumerate() {
             let level_key = format!("level_{}", level);
             let bytes: Vec<u8> =
                 bits.iter().map(|b| if *b { 1u8 } else { 0u8 }).collect();
@@ -311,9 +309,7 @@ impl FjallFilter {
         }
 
         // Save timestamps
-        for (level, &timestamp) in
-            self.storage.timestamps.read().unwrap().iter().enumerate()
-        {
+        for (level, &timestamp) in self.storage.timestamps.iter().enumerate() {
             let ts_key = format!("level_{}", level);
             let duration = timestamp.duration_since(SystemTime::UNIX_EPOCH)?;
             let ts_bytes =

@@ -178,7 +178,7 @@ fn calculate_bit_density(filter: &InMemoryFilter) -> Vec<f64> {
     let mut densities = Vec::with_capacity(filter.config.max_levels);
 
     for level in 0..filter.config.max_levels {
-        let level_bits = &filter.storage.levels.read().unwrap()[level];
+        let level_bits = &filter.storage.levels[level];
         let set_bits = level_bits.iter().filter(|bit| **bit).count();
         // let set_bits = level_bits.iter().filter(|&bit| bit).count();
         let density = set_bits as f64 / level_bits.len() as f64;

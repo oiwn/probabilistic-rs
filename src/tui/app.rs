@@ -32,14 +32,7 @@ impl App {
     pub fn get_current_level_bits(&self) -> Vec<bool> {
         // This is a safe approach to get the bits from the current level
         if self.current_view_level < self.filter.config().max_levels {
-            match self
-                .filter
-                .storage
-                .levels
-                .read()
-                .unwrap()
-                .get(self.current_view_level)
-            {
+            match self.filter.storage.levels.get(self.current_view_level) {
                 Some(level) => level.iter().map(|b| *b).collect(),
                 None => vec![false; self.filter.config().capacity],
             }
