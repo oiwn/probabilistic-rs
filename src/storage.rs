@@ -92,9 +92,9 @@ impl InMemoryStorage {
         total_bytes
     }
 
-    fn bitvec_to_bytes(&self, bits: &BitVec<usize, Lsb0>) -> Vec<u8> {
+    pub fn bitvec_to_bytes(&self, bits: &BitVec<usize, Lsb0>) -> Vec<u8> {
         // Calculate how many bytes we need (ceiling division of bits by 8)
-        let byte_count = (self.capacity + 7) / 8;
+        let byte_count = (self.capacity + 7).div_ceil(8);
         let mut result = Vec::with_capacity(byte_count);
 
         // Convert bit vector to bytes, 8 bits per byte
@@ -111,12 +111,12 @@ impl InMemoryStorage {
         result
     }
 
-    fn bytes_to_bitvec(&self, bytes: &[u8]) -> Result<BitVec<usize, Lsb0>> {
+    pub fn bytes_to_bitvec(&self, bytes: &[u8]) -> Result<BitVec<usize, Lsb0>> {
         // Create a new bitvec with the known capacity
         let mut bv = bitvec![usize, Lsb0; 0; self.capacity];
 
         // Ensure we have enough bytes
-        let expected_bytes = (self.capacity + 7) / 8;
+        let expected_bytes = (self.capacity + 7).div_ceil(8);
         if bytes.len() < expected_bytes {
             return Err(FilterError::StorageError(format!(
                 "Byte array too short for bit vector: expected at least {} bytes",
