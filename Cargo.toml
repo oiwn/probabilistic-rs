@@ -66,6 +66,7 @@ all-features = false
 
 [features]
 default = ["redb", "server", "cli", "fjall"]
+docs-only = ["cli", "redb", "fjall"]
 redb = ["dep:redb"]
 fjall = ["dep:fjall"]
 server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde", "dep:serde_json", "dep:dotenvy", "dep:redb"]

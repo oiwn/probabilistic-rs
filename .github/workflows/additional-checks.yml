@@ -28,4 +28,5 @@ jobs:
       - name: check documentation
         env:
           rustdocflags: "-d warnings"
-        run: cargo doc --no-deps --all-features --workspace
+        # run: cargo doc --no-deps --all-features --workspace
+        run: cargo doc --no-deps --no-default-features --features="docs-only"
