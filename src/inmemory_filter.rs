@@ -14,6 +14,7 @@ pub struct InMemoryFilter {
 
 impl InMemoryFilter {
     pub fn new(config: FilterConfig) -> Result<Self> {
+        // TODO: if we do not need level_fpr we shouldn't return it from function
         let (_level_fpr, bit_vector_size, num_hashes) = calculate_optimal_params(
             config.capacity,
             config.false_positive_rate,
@@ -74,7 +75,8 @@ impl ExpiringBloomFilter for InMemoryFilter {
         let indices: Vec<usize> = (self.config.hash_function)(
             item,
             self.num_hashes,
-            self.config.capacity,
+            // self.config.capacity,
+            self.storage.bit_vector_len(),
         )
         .into_iter()
         .map(|h| h as usize)
@@ -88,7 +90,8 @@ impl ExpiringBloomFilter for InMemoryFilter {
         let indices: Vec<usize> = (self.config.hash_function)(
             item,
             self.num_hashes,
-            self.config.capacity,
+            self.storage.bit_vector_len(),
+            // self.config.capacity,
         )
         .into_iter()
         .map(|h| h as usize)

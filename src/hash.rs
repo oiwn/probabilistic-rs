@@ -185,6 +185,7 @@ pub fn calculate_optimal_params(
     // Calculate optimal number of hash functions
     let num_hashes = optimal_num_hashes(capacity, bit_vector_size);
 
+    // TODO: probably need to remove level_fpr
     (level_fpr, bit_vector_size, num_hashes)
 }
 

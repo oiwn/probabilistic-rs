@@ -1,3 +1,4 @@
+// src/fjall_filter.rs
 use crate::{
     error::{FilterError, Result},
     filter::{ExpiringBloomFilter, FilterConfig},
@@ -6,7 +7,9 @@ use crate::{
 };
 use bitvec::{bitvec, order::Lsb0};
 use derive_builder::Builder;
-use redb::{Database, TableDefinition};
+use fjall::{
+    Config as FjallConfig, Keyspace, PartitionCreateOptions, PersistMode,
+};
 use std::{
     path::PathBuf,
     sync::{
@@ -17,16 +20,11 @@ use std::{
 };
 use tracing::error;
 
-// Define table schemas for ReDB
-const BITS_TABLE: TableDefinition<u8, &[u8]> = TableDefinition::new("bits");
-const TIMESTAMPS_TABLE: TableDefinition<u8, &[u8]> =
-    TableDefinition::new("timestamps");
-const CONFIG_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("config");
-
+// Configuration for FjallFilter with builder pattern
 #[derive(Builder, Clone)]
 #[builder(pattern = "owned")]
-pub struct RedbFilterConfig {
-    #[builder(default = "PathBuf::from(\"bloom.redb\")")]
+pub struct FjallFilterConfig {
+    #[builder(default = "PathBuf::from(\"bloom.fjall\")")]
     pub db_path: PathBuf,
     #[builder(default = "None")]
     pub filter_config: Option<FilterConfig>,
@@ -34,42 +32,36 @@ pub struct RedbFilterConfig {
     pub snapshot_interval: Duration,
 }
 
-pub struct RedbFilter {
+// Main FjallFilter implementation
+pub struct FjallFilter {
     pub storage: InMemoryStorage,
     config: FilterConfig,
     num_hashes: usize,
     current_level_index: AtomicUsize,
-    db: Arc<Database>,
-    // trhreading
+    keyspace: Arc<Keyspace>,
+    // threading
     dirty: Arc<AtomicBool>,
-    // shutdown: Arc<AtomicBool>,
-    // snapshot_thread: Option<JoinHandle<()>>,
     snapshot_interval: Duration,
-    last_snapshot: RwLock<SystemTime>, // Track last snapshot time
+    last_snapshot: RwLock<SystemTime>,
 }
 
-impl RedbFilter {
-    /// Creates a new or opens an existing RedbSlidingBloomFilter.
-    ///
-    /// If the database file already exists, it loads the configuration from
-    /// the database. In this case, the provided config parameter is ignored.
-    ///
-    /// If the database file doesn't exist, it creates a new one with the provided
-    /// configuration, which must be Some.
-    ///
-    /// Run parallel threads to drop snapshots into the redb and cleanup levels
-    pub fn new(config: RedbFilterConfig) -> Result<Self> {
+impl FjallFilter {
+    /// Creates a new or opens an existing FjallBloomFilter.
+    pub fn new(config: FjallFilterConfig) -> Result<Self> {
         let db_exists = config.db_path.exists();
 
+        // Open or create Fjall database
+        let fjall_config = FjallConfig::new(&config.db_path);
+        let keyspace = Arc::new(fjall_config.open().map_err(|e| {
+            FilterError::StorageError(format!("Failed to open Fjall DB: {}", e))
+        })?);
+
         // Handle configuration based on database existence
-        let (filter_config, db) = if db_exists {
+        let filter_config = if db_exists {
             // Database exists, try to load configuration
-            let db = Arc::new(
-                Database::open(&config.db_path).map_err(redb::Error::from)?,
-            );
-            match Self::load_config(&db)? {
-                Some(loaded_config) => (loaded_config, db),
-                None => {
+            match Self::load_config(&keyspace)? {
+                Some(loaded_config) => loaded_config,
+                _ => {
                     return Err(FilterError::StorageError(
                         "Database exists but no configuration found".to_string(),
                     ));
@@ -83,15 +75,10 @@ impl RedbFilter {
                 )
             })?;
 
-            // Create new database
-            let db = Arc::new(
-                Database::create(&config.db_path).map_err(redb::Error::from)?,
-            );
-
             // Save configuration
-            Self::save_config(&db, &filter_config)?;
+            Self::save_config(&keyspace, &filter_config)?;
 
-            (filter_config, db)
+            filter_config
         };
 
         let (_level_fpr, bit_vector_size, num_hashes) = calculate_optimal_params(
@@ -105,27 +92,22 @@ impl RedbFilter {
             InMemoryStorage::new(bit_vector_size, filter_config.max_levels)?;
 
         // State for background thread coordination
-        // let shutdown = Arc::new(AtomicBool::new(false));
         let dirty = Arc::new(AtomicBool::new(false));
 
-        // Create the filter instance first (without threads)
+        // Create the filter instance
         let mut filter = Self {
             storage,
             config: filter_config,
             num_hashes,
             current_level_index: AtomicUsize::new(0),
-            db: db.clone(),
+            keyspace: keyspace.clone(),
             dirty: dirty.clone(),
-            // shutdown: shutdown.clone(),
-            // snapshot_thread: None,
             snapshot_interval: config.snapshot_interval,
             last_snapshot: RwLock::new(SystemTime::now()),
         };
 
         // Load saved state from DB
         filter.load_state()?;
-
-        // TODO: in future need to do thread here
 
         Ok(filter)
     }
@@ -143,19 +125,22 @@ impl RedbFilter {
     }
 
     /// Loads filter configuration from the database
-    fn load_config(db: &Arc<Database>) -> Result<Option<FilterConfig>> {
-        let read_txn = db.begin_read().map_err(redb::Error::from)?;
-
-        // Try to open config table, return None if it doesn't exist
-        let config_table = match read_txn.open_table(CONFIG_TABLE) {
-            Ok(table) => table,
-            Err(_) => return Ok(None),
-        };
+    fn load_config(keyspace: &Arc<Keyspace>) -> Result<Option<FilterConfig>> {
+        // Open config partition
+        let config_partition = keyspace
+            .open_partition("config", PartitionCreateOptions::default())
+            .map_err(|e| {
+                FilterError::StorageError(format!(
+                    "Failed to open config partition: {}",
+                    e
+                ))
+            })?;
 
         // Try to get config
-        if let Some(config_bytes) = config_table
-            .get("filter_config")
-            .map_err(redb::Error::from)?
+        if let Some(config_bytes) =
+            config_partition.get("filter_config").map_err(|e| {
+                FilterError::StorageError(format!("Failed to read config: {}", e))
+            })?
         {
             let (capacity, false_positive_rate, max_levels, level_duration): (
                 usize,
@@ -163,7 +148,7 @@ impl RedbFilter {
                 usize,
                 Duration,
             ) = bincode::decode_from_slice(
-                config_bytes.value(),
+                &config_bytes,
                 bincode::config::standard(),
             )
             .map_err(|e| FilterError::SerializationError(e.to_string()))?
@@ -184,73 +169,105 @@ impl RedbFilter {
     }
 
     /// Saves filter configuration to the database
-    fn save_config(db: &Arc<Database>, config: &FilterConfig) -> Result<()> {
-        let write_txn = db.begin_write().map_err(redb::Error::from)?;
+    fn save_config(
+        keyspace: &Arc<Keyspace>,
+        config: &FilterConfig,
+    ) -> Result<()> {
+        let config_partition = keyspace
+            .open_partition("config", PartitionCreateOptions::default())
+            .map_err(|e| {
+                FilterError::StorageError(format!(
+                    "Failed to open config partition: {}",
+                    e
+                ))
+            })?;
 
-        {
-            let mut config_table = write_txn
-                .open_table(CONFIG_TABLE)
-                .map_err(redb::Error::from)?;
+        let serialized = bincode::encode_to_vec(
+            (
+                config.capacity,
+                config.false_positive_rate,
+                config.max_levels,
+                config.level_duration,
+            ),
+            bincode::config::standard(),
+        )
+        .map_err(|e| FilterError::SerializationError(e.to_string()))?;
 
-            let serialized = bincode::encode_to_vec(
-                (
-                    config.capacity,
-                    config.false_positive_rate,
-                    config.max_levels,
-                    config.level_duration,
-                ),
-                bincode::config::standard(),
-            )
-            .map_err(|e| FilterError::SerializationError(e.to_string()))?;
+        // Store in database
+        config_partition
+            .insert("filter_config", serialized)
+            .map_err(|e| {
+                FilterError::StorageError(format!("Failed to save config: {}", e))
+            })?;
 
-            // Store in database if key exist it will be replaced
-            config_table
-                .insert("filter_config", serialized.as_slice())
-                .map_err(redb::Error::from)?;
-        }
-        write_txn.commit().map_err(redb::Error::from)?;
+        // Ensure config is persisted
+        keyspace.persist(PersistMode::SyncAll).map_err(|e| {
+            FilterError::StorageError(format!("Failed to persist config: {}", e))
+        })?;
 
         Ok(())
     }
-
     fn load_state(&mut self) -> Result<()> {
-        let read_txn = self.db.begin_read().map_err(redb::Error::from)?;
-
         let bit_vector_size = self.storage.bit_vector_len();
 
+        // Open bits partition
+        let bits_partition = self
+            .keyspace
+            .open_partition("bits", PartitionCreateOptions::default())
+            .map_err(|e| {
+                FilterError::StorageError(format!(
+                    "Failed to open bits partition: {}",
+                    e
+                ))
+            })?;
+
+        // Open timestamps partition
+        let timestamps_partition = self
+            .keyspace
+            .open_partition("timestamps", PartitionCreateOptions::default())
+            .map_err(|e| {
+                FilterError::StorageError(format!(
+                    "Failed to open timestamps partition: {}",
+                    e
+                ))
+            })?;
+
         // Load bits
-        if let Ok(bits_table) = read_txn.open_table(BITS_TABLE) {
-            for level in 0..self.config.max_levels {
-                let level_u8 = level as u8;
-                if let Ok(Some(bits)) = bits_table.get(&level_u8) {
-                    let bit_vec: Vec<bool> =
-                        bits.value().iter().map(|&byte| byte != 0).collect();
-                    if bit_vec.len() == bit_vector_size {
-                        let mut bit_vec_new =
-                            bitvec![usize, Lsb0; 0; bit_vector_size];
-                        for (i, &val) in bit_vec.iter().enumerate() {
-                            bit_vec_new.set(i, val);
-                        }
-                        self.storage.levels.write().unwrap()[level] = bit_vec_new;
+        for level in 0..self.config.max_levels {
+            let level_key = format!("level_{}", level);
+            if let Some(bits) = bits_partition.get(&level_key).map_err(|e| {
+                FilterError::StorageError(format!("Failed to read bits: {}", e))
+            })? {
+                let bit_vec: Vec<bool> =
+                    bits.iter().map(|&byte| byte != 0).collect();
+                if bit_vec.len() == bit_vector_size {
+                    let mut bit_vec_new =
+                        bitvec![usize, Lsb0; 0; bit_vector_size];
+                    for (i, &val) in bit_vec.iter().enumerate() {
+                        bit_vec_new.set(i, val);
                     }
+                    self.storage.levels.write().unwrap()[level] = bit_vec_new;
                 }
             }
         }
 
         // Load timestamps
-        if let Ok(timestamps_table) = read_txn.open_table(TIMESTAMPS_TABLE) {
-            for level in 0..self.config.max_levels {
-                let level_u8 = level as u8;
-                if let Ok(Some(ts_bytes)) = timestamps_table.get(&level_u8) {
-                    if let Ok((duration, _)) =
-                        bincode::decode_from_slice::<Duration, _>(
-                            ts_bytes.value(),
-                            bincode::config::standard(),
-                        )
-                    {
-                        self.storage.timestamps.write().unwrap()[level] =
-                            SystemTime::UNIX_EPOCH + duration;
-                    }
+        for level in 0..self.config.max_levels {
+            let ts_key = format!("level_{}", level);
+            if let Some(ts_bytes) =
+                timestamps_partition.get(&ts_key).map_err(|e| {
+                    FilterError::StorageError(format!(
+                        "Failed to read timestamp: {}",
+                        e
+                    ))
+                })?
+            {
+                if let Ok((duration, _)) = bincode::decode_from_slice::<Duration, _>(
+                    &ts_bytes,
+                    bincode::config::standard(),
+                ) {
+                    self.storage.timestamps.write().unwrap()[level] =
+                        SystemTime::UNIX_EPOCH + duration;
                 }
             }
         }
@@ -259,48 +276,70 @@ impl RedbFilter {
     }
 
     pub fn save_snapshot(&self) -> Result<()> {
-        let write_txn = self.db.begin_write().map_err(redb::Error::from)?;
+        // Open bits partition
+        let bits_partition = self
+            .keyspace
+            .open_partition("bits", PartitionCreateOptions::default())
+            .map_err(|e| {
+                FilterError::StorageError(format!(
+                    "Failed to open bits partition: {}",
+                    e
+                ))
+            })?;
+
+        // Open timestamps partition
+        let timestamps_partition = self
+            .keyspace
+            .open_partition("timestamps", PartitionCreateOptions::default())
+            .map_err(|e| {
+                FilterError::StorageError(format!(
+                    "Failed to open timestamps partition: {}",
+                    e
+                ))
+            })?;
 
         // Save bits
+        for (level, bits) in
+            self.storage.levels.read().unwrap().iter().enumerate()
         {
-            let mut bits_table = write_txn
-                .open_table(BITS_TABLE)
-                .map_err(redb::Error::from)?;
-
-            for (level, bits) in
-                self.storage.levels.read().unwrap().iter().enumerate()
-            {
-                let bytes: Vec<u8> =
-                    bits.iter().map(|b| if *b { 1u8 } else { 0u8 }).collect();
-                bits_table
-                    .insert(&(level as u8), bytes.as_slice())
-                    .map_err(redb::Error::from)?;
-            }
+            let level_key = format!("level_{}", level);
+            let bytes: Vec<u8> =
+                bits.iter().map(|b| if *b { 1u8 } else { 0u8 }).collect();
+            bits_partition.insert(&level_key, bytes).map_err(|e| {
+                FilterError::StorageError(format!("Failed to save bits: {}", e))
+            })?;
         }
 
         // Save timestamps
+        for (level, &timestamp) in
+            self.storage.timestamps.read().unwrap().iter().enumerate()
         {
-            let mut timestamps_table = write_txn
-                .open_table(TIMESTAMPS_TABLE)
-                .map_err(redb::Error::from)?;
+            let ts_key = format!("level_{}", level);
+            let duration = timestamp.duration_since(SystemTime::UNIX_EPOCH)?;
+            let ts_bytes =
+                bincode::encode_to_vec(duration, bincode::config::standard())
+                    .map_err(|e| {
+                        FilterError::SerializationError(e.to_string())
+                    })?;
 
-            for (level, &timestamp) in
-                self.storage.timestamps.read().unwrap().iter().enumerate()
-            {
-                let duration =
-                    timestamp.duration_since(SystemTime::UNIX_EPOCH)?;
-                let ts_bytes =
-                    bincode::encode_to_vec(duration, bincode::config::standard())
-                        .map_err(|e| {
-                            FilterError::SerializationError(e.to_string())
-                        })?;
-                timestamps_table
-                    .insert(&(level as u8), ts_bytes.as_slice())
-                    .map_err(redb::Error::from)?;
-            }
+            timestamps_partition
+                .insert(&ts_key, ts_bytes)
+                .map_err(|e| {
+                    FilterError::StorageError(format!(
+                        "Failed to save timestamp: {}",
+                        e
+                    ))
+                })?;
         }
 
-        write_txn.commit().map_err(redb::Error::from)?;
+        // Ensure data is persisted
+        self.keyspace.persist(PersistMode::SyncAll).map_err(|e| {
+            FilterError::StorageError(format!(
+                "Failed to persist snapshot: {}",
+                e
+            ))
+        })?;
+
         Ok(())
     }
 
@@ -326,7 +365,7 @@ impl RedbFilter {
     }
 }
 
-impl ExpiringBloomFilter for RedbFilter {
+impl ExpiringBloomFilter for FjallFilter {
     fn insert(&mut self, item: &[u8]) -> Result<()> {
         if self.should_create_new_level()? {
             self.create_new_level()?;
@@ -347,6 +386,7 @@ impl ExpiringBloomFilter for RedbFilter {
 
         // Signal thread to shut down
         self.dirty.store(true, Ordering::Relaxed);
+
         // Snapshot logic
         let now = SystemTime::now();
         {
@@ -392,7 +432,6 @@ impl ExpiringBloomFilter for RedbFilter {
         Ok(false)
     }
 
-    // TODO: return amount of levels cleared
     fn cleanup_expired_levels(&mut self) -> Result<()> {
         let now = SystemTime::now();
         for level in 0..self.config.max_levels {
@@ -410,10 +449,8 @@ impl ExpiringBloomFilter for RedbFilter {
     }
 }
 
-impl Drop for RedbFilter {
+impl Drop for FjallFilter {
     fn drop(&mut self) {
-        // TODO: here will need to shutdown parallel thread
-
         // Take final snapshot on drop if dirty
         if self.dirty.load(Ordering::Relaxed) {
             if let Err(err) = self.save_snapshot() {
