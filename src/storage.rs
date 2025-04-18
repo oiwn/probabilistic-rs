@@ -33,7 +33,6 @@ pub trait FilterStorage {
 
 // In-memory storage implementation
 pub struct InMemoryStorage {
-    // NOTE: u8 to convert fo db storage or usize?
     pub levels: Vec<BitVec<usize, Lsb0>>,
     pub timestamps: Vec<SystemTime>,
     pub capacity: usize,
@@ -93,17 +92,12 @@ impl InMemoryStorage {
         total_bytes
     }
 
-    #[allow(dead_code)]
-    fn bitvec_to_bytes(bits: &BitVec<usize, Lsb0>) -> Vec<u8> {
-        // We need to convert from bitvec's internal representation to bytes
-        // First, get the bit count to store alongside the data
-        let bit_count = bits.len();
+    fn bitvec_to_bytes(&self, bits: &BitVec<usize, Lsb0>) -> Vec<u8> {
+        // Calculate how many bytes we need (ceiling division of bits by 8)
+        let byte_count = (self.capacity + 7) / 8;
+        let mut result = Vec::with_capacity(byte_count);
 
-        // Serialize the bit count as a u64 (8 bytes)
-        let mut result = Vec::new();
-        result.extend_from_slice(&(bit_count as u64).to_le_bytes());
-
-        // Now convert the bit vector to bytes
+        // Convert bit vector to bytes, 8 bits per byte
         for chunk in bits.chunks(8) {
             let mut byte = 0u8;
             for (i, bit) in chunk.iter().enumerate() {
@@ -117,28 +111,25 @@ impl InMemoryStorage {
         result
     }
 
-    #[allow(unused)]
-    fn bytes_to_bitvec(bytes: &[u8]) -> Result<BitVec<usize, Lsb0>> {
-        if bytes.len() < 8 {
-            return Err(FilterError::SerializationError(
-                "Byte array too short for bit vector".to_string(),
-            ));
+    fn bytes_to_bitvec(&self, bytes: &[u8]) -> Result<BitVec<usize, Lsb0>> {
+        // Create a new bitvec with the known capacity
+        let mut bv = bitvec![usize, Lsb0; 0; self.capacity];
+
+        // Ensure we have enough bytes
+        let expected_bytes = (self.capacity + 7) / 8;
+        if bytes.len() < expected_bytes {
+            return Err(FilterError::StorageError(format!(
+                "Byte array too short for bit vector: expected at least {} bytes",
+                expected_bytes
+            )));
         }
 
-        // Extract the bit count from the first 8 bytes
-        let bit_count = u64::from_le_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6],
-            bytes[7],
-        ]) as usize;
-
-        // Create a new bitvec with the right size
-        let mut bv = bitvec![usize, Lsb0; 0; bit_count];
-
         // Fill in the bits
-        for (i, &byte) in bytes[8..].iter().enumerate() {
+        for (i, &byte) in bytes.iter().enumerate() {
             for bit_pos in 0..8 {
-                if i * 8 + bit_pos < bit_count {
-                    bv.set(i * 8 + bit_pos, (byte & (1 << bit_pos)) != 0);
+                let idx = i * 8 + bit_pos;
+                if idx < self.capacity {
+                    bv.set(idx, (byte & (1 << bit_pos)) != 0);
                 }
             }
         }
@@ -242,6 +233,9 @@ mod tests {
 
     #[test]
     fn test_bitvec_serialization() {
+        // Create a test storage instance
+        let storage = InMemoryStorage::new(100, 1).unwrap();
+
         // Create a BitVec with various patterns
         let mut bv = bitvec![usize, Lsb0; 0; 100];
 
@@ -253,10 +247,10 @@ mod tests {
         bv.set(99, true);
 
         // Serialize to bytes
-        let bytes = InMemoryStorage::bitvec_to_bytes(&bv);
+        let bytes = storage.bitvec_to_bytes(&bv);
 
         // Deserialize back to BitVec
-        let bv2 = InMemoryStorage::bytes_to_bitvec(&bytes).unwrap();
+        let bv2 = storage.bytes_to_bitvec(&bytes).unwrap();
 
         // Verify they're the same
         assert_eq!(bv.len(), bv2.len());
@@ -268,9 +262,11 @@ mod tests {
     #[test]
     fn test_bitvec_empty() {
         // Test with an empty BitVec
+        let storage = InMemoryStorage::new(0, 1).unwrap();
         let bv = bitvec![usize, Lsb0; 0; 0];
-        let bytes = InMemoryStorage::bitvec_to_bytes(&bv);
-        let bv2 = InMemoryStorage::bytes_to_bitvec(&bytes).unwrap();
+
+        let bytes = storage.bitvec_to_bytes(&bv);
+        let bv2 = storage.bytes_to_bitvec(&bytes).unwrap();
 
         assert_eq!(bv.len(), bv2.len());
         assert_eq!(bv.len(), 0);
@@ -279,11 +275,12 @@ mod tests {
     #[test]
     fn test_bitvec_all_set() {
         // Test with all bits set
+        let storage = InMemoryStorage::new(50, 1).unwrap();
         let mut bv = bitvec![usize, Lsb0; 0; 50];
         bv.fill(true);
 
-        let bytes = InMemoryStorage::bitvec_to_bytes(&bv);
-        let bv2 = InMemoryStorage::bytes_to_bitvec(&bytes).unwrap();
+        let bytes = storage.bitvec_to_bytes(&bv);
+        let bv2 = storage.bytes_to_bitvec(&bytes).unwrap();
 
         assert_eq!(bv.len(), bv2.len());
         for i in 0..bv.len() {
@@ -294,13 +291,14 @@ mod tests {
     #[test]
     fn test_bitvec_non_multiple_of_8() {
         // Test with bit count that's not a multiple of 8
+        let storage = InMemoryStorage::new(17, 1).unwrap();
         let mut bv = bitvec![usize, Lsb0; 0; 17];
         bv.set(0, true);
         bv.set(8, true);
         bv.set(16, true);
 
-        let bytes = InMemoryStorage::bitvec_to_bytes(&bv);
-        let bv2 = InMemoryStorage::bytes_to_bitvec(&bytes).unwrap();
+        let bytes = storage.bitvec_to_bytes(&bv);
+        let bv2 = storage.bytes_to_bitvec(&bytes).unwrap();
 
         assert_eq!(bv.len(), bv2.len());
         assert!(bv2[0]);
@@ -311,7 +309,8 @@ mod tests {
     #[test]
     fn test_bitvec_serialization_error() {
         // Test error handling with too short byte array
-        let result = InMemoryStorage::bytes_to_bitvec(&[1, 2, 3]);
+        let storage = InMemoryStorage::new(100, 1).unwrap();
+        let result = storage.bytes_to_bitvec(&[1, 2, 3]);
         assert!(result.is_err());
     }
 }
