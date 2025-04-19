@@ -208,12 +208,14 @@ impl FjallFilter {
         Ok(())
     }
     fn load_state(&mut self) -> Result<()> {
+        let options = PartitionCreateOptions::default()
+            .compression(fjall::CompressionType::None);
         let bit_vector_size = self.storage.bit_vector_len();
 
         // Open bits partition
         let bits_partition = self
             .keyspace
-            .open_partition("bits", PartitionCreateOptions::default())
+            .open_partition("bits", options.clone())
             .map_err(|e| {
                 FilterError::StorageError(format!(
                     "Failed to open bits partition: {}",
@@ -224,7 +226,7 @@ impl FjallFilter {
         // Open timestamps partition
         let timestamps_partition = self
             .keyspace
-            .open_partition("timestamps", PartitionCreateOptions::default())
+            .open_partition("timestamps", options)
             .map_err(|e| {
                 FilterError::StorageError(format!(
                     "Failed to open timestamps partition: {}",
@@ -277,9 +279,11 @@ impl FjallFilter {
 
     pub fn save_snapshot(&self) -> Result<()> {
         // Open bits partition
+        let options = PartitionCreateOptions::default()
+            .compression(fjall::CompressionType::None);
         let bits_partition = self
             .keyspace
-            .open_partition("bits", PartitionCreateOptions::default())
+            .open_partition("bits", options.clone())
             .map_err(|e| {
                 FilterError::StorageError(format!(
                     "Failed to open bits partition: {}",
@@ -290,7 +294,7 @@ impl FjallFilter {
         // Open timestamps partition
         let timestamps_partition = self
             .keyspace
-            .open_partition("timestamps", PartitionCreateOptions::default())
+            .open_partition("timestamps", options)
             .map_err(|e| {
                 FilterError::StorageError(format!(
                     "Failed to open timestamps partition: {}",

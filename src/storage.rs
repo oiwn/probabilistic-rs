@@ -93,16 +93,19 @@ impl InMemoryStorage {
     }
 
     pub fn bitvec_to_bytes(&self, bits: &BitVec<usize, Lsb0>) -> Vec<u8> {
-        // Calculate how many bytes we need (ceiling division of bits by 8)
+        // Calculate how many bytes we need (ceiling division of capacity by 8)
         let byte_count = (self.capacity + 7).div_ceil(8);
         let mut result = Vec::with_capacity(byte_count);
 
-        // Convert bit vector to bytes, 8 bits per byte
-        for chunk in bits.chunks(8) {
+        // Iterate through all bytes that would be needed for capacity
+        for byte_idx in 0..byte_count {
             let mut byte = 0u8;
-            for (i, bit) in chunk.iter().enumerate() {
-                if *bit {
-                    byte |= 1 << i;
+            // For each bit position in the byte
+            for bit_pos in 0..8 {
+                let bit_idx = byte_idx * 8 + bit_pos;
+                // Only set the bit if it's within bounds and set in the source
+                if bit_idx < bits.len() && bits[bit_idx] {
+                    byte |= 1 << bit_pos;
                 }
             }
             result.push(byte);
