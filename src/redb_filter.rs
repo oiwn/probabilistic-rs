@@ -4,7 +4,7 @@ use crate::{
     hash::{calculate_optimal_params, default_hash_function},
     storage::{FilterStorage, InMemoryStorage},
 };
-use bitvec::{bitvec, order::Lsb0};
+// use bitvec::{bitvec, order::Lsb0};
 use derive_builder::Builder;
 use redb::{Database, TableDefinition};
 use std::{
@@ -216,23 +216,29 @@ impl RedbFilter {
     fn load_state(&mut self) -> Result<()> {
         let read_txn = self.db.begin_read().map_err(redb::Error::from)?;
 
-        let bit_vector_size = self.storage.bit_vector_len();
+        // let bit_vector_size = self.storage.bit_vector_len();
 
         // Load bits
         if let Ok(bits_table) = read_txn.open_table(BITS_TABLE) {
             for level in 0..self.config.max_levels {
                 let level_u8 = level as u8;
                 if let Ok(Some(bits)) = bits_table.get(&level_u8) {
-                    let bit_vec: Vec<bool> =
-                        bits.value().iter().map(|&byte| byte != 0).collect();
-                    if bit_vec.len() == bit_vector_size {
-                        let mut bit_vec_new =
-                            bitvec![usize, Lsb0; 0; bit_vector_size];
-                        for (i, &val) in bit_vec.iter().enumerate() {
-                            bit_vec_new.set(i, val);
-                        }
-                        self.storage.levels.write().unwrap()[level] = bit_vec_new;
+                    if let Ok(bit_vec) =
+                        self.storage.bytes_to_bitvec(bits.value())
+                    {
+                        self.storage.levels[level] = bit_vec;
                     }
+
+                    // let bit_vec: Vec<bool> =
+                    //     bits.value().iter().map(|&byte| byte != 0).collect();
+                    // if bit_vec.len() == bit_vector_size {
+                    //     let mut bit_vec_new =
+                    //         bitvec![usize, Lsb0; 0; bit_vector_size];
+                    //     for (i, &val) in bit_vec.iter().enumerate() {
+                    //         bit_vec_new.set(i, val);
+                    //     }
+                    //     self.storage.levels[level] = bit_vec_new;
+                    // }
                 }
             }
         }
@@ -248,7 +254,7 @@ impl RedbFilter {
                             bincode::config::standard(),
                         )
                     {
-                        self.storage.timestamps.write().unwrap()[level] =
+                        self.storage.timestamps[level] =
                             SystemTime::UNIX_EPOCH + duration;
                     }
                 }
@@ -267,11 +273,10 @@ impl RedbFilter {
                 .open_table(BITS_TABLE)
                 .map_err(redb::Error::from)?;
 
-            for (level, bits) in
-                self.storage.levels.read().unwrap().iter().enumerate()
-            {
-                let bytes: Vec<u8> =
-                    bits.iter().map(|b| if *b { 1u8 } else { 0u8 }).collect();
+            for (level, bits) in self.storage.levels.iter().enumerate() {
+                // let bytes: Vec<u8> =
+                //     bits.iter().map(|b| if *b { 1u8 } else { 0u8 }).collect();
+                let bytes = self.storage.bitvec_to_bytes(bits);
                 bits_table
                     .insert(&(level as u8), bytes.as_slice())
                     .map_err(redb::Error::from)?;
@@ -284,8 +289,7 @@ impl RedbFilter {
                 .open_table(TIMESTAMPS_TABLE)
                 .map_err(redb::Error::from)?;
 
-            for (level, &timestamp) in
-                self.storage.timestamps.read().unwrap().iter().enumerate()
+            for (level, &timestamp) in self.storage.timestamps.iter().enumerate()
             {
                 let duration =
                     timestamp.duration_since(SystemTime::UNIX_EPOCH)?;

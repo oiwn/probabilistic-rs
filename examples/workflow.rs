@@ -230,13 +230,11 @@ fn custom_run_app<B: ratatui::backend::Backend>(
                     .filter
                     .storage
                     .levels
-                    .write()
-                    .unwrap()
                     .get_mut(filter.current_level_index)
                 {
                     // Copy the bits from our in-memory filter
                     // to the display filter
-                    for (i, bit) in filter.storage.levels.write().unwrap()
+                    for (i, bit) in filter.storage.levels
                         [filter.current_level_index]
                         .iter()
                         .enumerate()
@@ -408,19 +406,18 @@ fn print_statistics(
     // Calculate bit density for each level
     println!("\n📈 Bit Density by Level:");
     for level in 0..filter.config.max_levels {
-        let set_bits = filter.storage.levels.read().unwrap()[level]
+        let set_bits = filter.storage.levels[level]
             .iter()
             .filter(|bit| **bit)
             .count();
-        let density = (set_bits as f64
-            / filter.storage.levels.read().unwrap()[level].len() as f64)
-            * 100.0;
+        let density =
+            (set_bits as f64 / filter.storage.levels[level].len() as f64) * 100.0;
         println!(
             "   Level {}: {:.2}% ({}/{} bits set)",
             level,
             density,
             set_bits,
-            filter.storage.levels.read().unwrap()[level].len()
+            filter.storage.levels[level].len()
         );
     }
 
