@@ -53,6 +53,40 @@ fn create_test_filter(db_path: PathBuf, capacity: usize) -> FjallFilter {
     FjallFilter::new(fjall_config).expect("Failed to create FjallFilter")
 }
 
+fn bench_tricky_issue(c: &mut Criterion) {
+    let mut group = c.benchmark_group("fjall_tricky");
+    group.sample_size(10); // Reduce sample size for disk operations
+    group.measurement_time(Duration::from_secs(15));
+
+    // In benches/fjall_snapshot_benchmarks.rs
+
+    for capacity in [10_000, 100_000] {
+        let db_path = temp_db_path(&format!("fjall_tricky_bench_{}", capacity));
+        let test_data = generate_test_data(capacity);
+
+        group.bench_with_input(
+            BenchmarkId::new("snapshot", capacity),
+            &(capacity, &test_data, db_path.clone()),
+            |b, (cap, data, path)| {
+                // Create the filter OUTSIDE the measurement loop
+                let mut filter = create_test_filter(path.clone(), *cap);
+                for item in data.iter() {
+                    let _ = filter.insert(item.as_bytes());
+                }
+
+                // Now ONLY measure the snapshot operation
+                b.iter(|| {
+                    // This is all that will be measured
+                    filter.save_snapshot().unwrap()
+                });
+
+                // Manually clean up after benchmark
+                drop(filter);
+            },
+        );
+    }
+}
+
 // Benchmark snapshot performance
 fn bench_fjall_snapshots(c: &mut Criterion) {
     let mut group = c.benchmark_group("fjall_snapshot_operations");
@@ -83,9 +117,9 @@ fn bench_fjall_snapshots(c: &mut Criterion) {
                     },
                     |filter| {
                         // Measure: Time the snapshot operation directly
-                        if let Err(e) = filter.save_snapshot() {
-                            eprintln!("Snapshot error: {}", e);
-                        }
+                        // if let Err(e) = filter.save_snapshot() {
+                        //     eprintln!("Snapshot error: {}", e);
+                        // }
                     },
                 )
             },
@@ -290,6 +324,7 @@ fn bench_backend_comparison(c: &mut Criterion) {
 
 criterion_group!(
     benches,
+    bench_tricky_issue,
     bench_fjall_snapshots,
     bench_fjall_snapshot_fill_levels,
     bench_fjall_multi_level_snapshots,
