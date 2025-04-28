@@ -117,9 +117,9 @@ fn bench_fjall_snapshots(c: &mut Criterion) {
                     },
                     |filter| {
                         // Measure: Time the snapshot operation directly
-                        // if let Err(e) = filter.save_snapshot() {
-                        //     eprintln!("Snapshot error: {}", e);
-                        // }
+                        if let Err(e) = filter.save_snapshot() {
+                            eprintln!("Snapshot error: {}", e);
+                        }
                     },
                 )
             },
