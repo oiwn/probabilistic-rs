@@ -1,11 +1,9 @@
-// src/fjall_filter.rs
 use crate::{
     error::{FilterError, Result},
     filter::{ExpiringBloomFilter, FilterConfig},
     hash::{calculate_optimal_params, default_hash_function},
     storage::{FilterStorage, InMemoryStorage},
 };
-// use bitvec::{bitvec, order::Lsb0};
 use derive_builder::Builder;
 use fjall::{
     Config as FjallConfig, Keyspace, Partition, PartitionCreateOptions,
@@ -19,7 +17,6 @@ use std::{
     },
     time::{Duration, SystemTime},
 };
-use tracing::error;
 
 // Configuration for FjallFilter with builder pattern
 #[derive(Builder, Clone)]
