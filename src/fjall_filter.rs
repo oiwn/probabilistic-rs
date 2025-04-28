@@ -1,11 +1,9 @@
-// src/fjall_filter.rs
 use crate::{
     error::{FilterError, Result},
     filter::{ExpiringBloomFilter, FilterConfig},
     hash::{calculate_optimal_params, default_hash_function},
     storage::{FilterStorage, InMemoryStorage},
 };
-// use bitvec::{bitvec, order::Lsb0};
 use derive_builder::Builder;
 use fjall::{
     Config as FjallConfig, Keyspace, Partition, PartitionCreateOptions,
@@ -19,7 +17,6 @@ use std::{
     },
     time::{Duration, SystemTime},
 };
-use tracing::error;
 
 // Configuration for FjallFilter with builder pattern
 #[derive(Builder, Clone)]
@@ -39,7 +36,7 @@ pub struct FjallFilter {
     config: FilterConfig,
     num_hashes: usize,
     current_level_index: AtomicUsize,
-    _keyspace: Arc<Keyspace>,
+    keyspace: Arc<Keyspace>,
     // Add these fields to cache the partitions
     bits_partition: Arc<Partition>,
     timestamps_partition: Arc<Partition>,
@@ -128,7 +125,8 @@ impl FjallFilter {
             config: filter_config,
             num_hashes,
             current_level_index: AtomicUsize::new(0),
-            _keyspace: keyspace.clone(),
+            keyspace,
+            // _keyspace: keyspace.clone(),
             bits_partition,
             timestamps_partition,
             dirty: dirty.clone(),
@@ -332,8 +330,6 @@ impl FjallFilter {
         // Save bits
         for (level, bits) in self.storage.levels.iter().enumerate() {
             let level_key = format!("level_{}", level);
-            // let bytes: Vec<u8> =
-            //     bits.iter().map(|b| if *b { 1u8 } else { 0u8 }).collect();
             let bytes = self.storage.bitvec_to_bytes(bits);
             self.bits_partition.insert(&level_key, bytes).map_err(|e| {
                 FilterError::StorageError(format!("Failed to save bits: {}", e))
@@ -360,13 +356,13 @@ impl FjallFilter {
                 })?;
         }
 
-        // // Ensure data is persisted
-        // self.keyspace.persist(PersistMode::SyncAll).map_err(|e| {
-        //     FilterError::StorageError(format!(
-        //         "Failed to persist snapshot: {}",
-        //         e
-        //     ))
-        // })?;
+        // Ensure data is persisted
+        self.keyspace.persist(PersistMode::SyncAll).map_err(|e| {
+            FilterError::StorageError(format!(
+                "Failed to persist snapshot: {}",
+                e
+            ))
+        })?;
 
         Ok(())
     }
@@ -481,9 +477,9 @@ impl Drop for FjallFilter {
     fn drop(&mut self) {
         // Take final snapshot on drop if dirty
         if self.dirty.load(Ordering::Relaxed) {
-            if let Err(err) = self.save_snapshot() {
-                error!("Error saving snapshot: {}", err);
-            }
+            // if let Err(err) = self.save_snapshot() {
+            //     error!("Error saving snapshot: {}", err);
+            // }
         }
     }
 }
