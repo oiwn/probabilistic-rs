@@ -28,16 +28,15 @@
 //!     * Since 32 bit hashes used, max capacity would be 2**32-1 (Not sure)
 
 #[cfg(feature = "server")]
-pub mod api;
 pub mod common;
 mod error;
 mod hash;
 mod probablistic;
+#[cfg(feature = "server")]
+pub mod server;
 mod storage;
 #[cfg(feature = "cli")]
 pub mod tui;
-#[cfg(feature = "server")]
-pub mod types;
 
 pub use error::{FilterError, Result};
 pub use hash::{
@@ -47,6 +46,11 @@ pub use hash::{
 pub use probablistic::filter::{
     self, ExpiringBloomFilter, FilterConfig, FilterConfigBuilder,
     FilterConfigBuilderError,
+};
+#[cfg(feature = "server")]
+pub use server::types::{
+    AppState, ErrorResponse, InsertRequest, QueryResponse, ServerConfig,
+    ServerConfigBuilder, ServerConfigBuilderError,
 };
 #[cfg(feature = "fjall")]
 pub use storage::fjall_filter::{
@@ -58,7 +62,3 @@ pub use storage::redb_filter::{
     RedbFilter, RedbFilterConfig, RedbFilterConfigBuilder,
 };
 pub use storage::{FilterStorage, InMemoryStorage};
-#[cfg(feature = "server")]
-pub use types::{
-    AppState, ServerConfig, ServerConfigBuilder, ServerConfigBuilderError,
-};
