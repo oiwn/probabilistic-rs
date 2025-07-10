@@ -168,7 +168,7 @@ fn render_bit_visualization(f: &mut Frame, app: &App, area: Rect) {
 
         // Add index marker at the start of line
         line_spans.push(Span::styled(
-            format!("{:06} ", chunk_start),
+            format!("{chunk_start:06}"),
             Style::default().fg(Color::DarkGray),
         ));
 

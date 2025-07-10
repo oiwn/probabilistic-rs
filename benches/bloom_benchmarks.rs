@@ -66,7 +66,7 @@ fn bench_insert(c: &mut Criterion) {
                     |mut filter| {
                         for item in data.iter() {
                             if let Err(e) = filter.insert(item.as_bytes()) {
-                                eprintln!("Insert error (continuing): {}", e);
+                                eprintln!("Insert error (continuing): {e}");
                                 continue;
                             }
                         }

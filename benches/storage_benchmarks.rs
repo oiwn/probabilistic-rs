@@ -27,7 +27,7 @@ fn bench_set_bits(c: &mut Criterion) {
         // Test different numbers of bits to set
         for &bit_count in &[100, 10000] {
             group.bench_with_input(
-                BenchmarkId::new(format!("capacity_{}", capacity), bit_count),
+                BenchmarkId::new(format!("capacity_{capacity}"), bit_count),
                 &(capacity, bit_count),
                 |b, &(cap, bits)| {
                     b.iter_batched(
@@ -57,7 +57,7 @@ fn bench_get_bits(c: &mut Criterion) {
     for &capacity in &[1_000_000] {
         for &bit_count in &[1000, 10000] {
             group.bench_with_input(
-                BenchmarkId::new(format!("capacity_{}", capacity), bit_count),
+                BenchmarkId::new(format!("capacity_{capacity}"), bit_count),
                 &(capacity, bit_count),
                 |b, &(cap, bits)| {
                     // Setup: Create storage, set some bits, then measure get performance

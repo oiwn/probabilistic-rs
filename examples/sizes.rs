@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 mod common;
 
 use common::{format_file_size, generate_random_string};

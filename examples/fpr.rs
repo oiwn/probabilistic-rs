@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 mod common;
 
 use comfy_table::{

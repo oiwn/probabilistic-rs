@@ -147,10 +147,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 db_path.display()
             );
             println!("Configuration:");
-            println!("  Capacity: {}", capacity);
-            println!("  False positive rate: {}", fpr);
-            println!("  Levels: {}", levels);
-            println!("  Duration: {} seconds", duration);
+            println!("  Capacity: {capacity}");
+            println!("  False positive rate: {fpr}");
+            println!("  Levels: {levels}");
+            println!("  Duration: {duration} seconds");
         }
         Commands::Load { db_path, operation } => {
             println!("Load command");
@@ -183,14 +183,14 @@ fn handle_load_command(
     match operation {
         LoadCommands::Insert { element } => {
             filter.insert(element.as_bytes())?;
-            println!("Element '{}' inserted successfully", element);
+            println!("Element '{element}' inserted successfully");
         }
         LoadCommands::Check { element } => {
             let exists = filter.query(element.as_bytes())?;
             if exists {
-                println!("Element '{}' exists in the filter", element);
+                println!("Element '{element}' exists in the filter");
             } else {
-                println!("Element '{}' does not exist in the filter", element);
+                println!("Element '{element}' does not exist in the filter");
             }
         }
         LoadCommands::Info => {
@@ -213,8 +213,8 @@ fn handle_load_command(
             let num_hashes =
                 optimal_num_hashes(filter_config.capacity, bit_vector_size);
 
-            println!("  Bit vector size: {}", bit_vector_size);
-            println!("  Number of hash functions: {}", num_hashes);
+            println!("  Bit vector size: {bit_vector_size}");
+            println!("  Number of hash functions: {num_hashes}");
 
             // Try to estimate current usage
             println!("\nCurrent State:");
@@ -244,7 +244,7 @@ fn handle_load_command(
 fn confirm_action(prompt: &str) -> bool {
     use std::io::{self, Write};
 
-    print!("{} [y/N]: ", prompt);
+    print!("{prompt} [y/N]: ");
     io::stdout().flush().unwrap();
 
     let mut input = String::new();
@@ -301,7 +301,7 @@ pub fn run_tui(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     terminal.show_cursor()?;
 
     if let Err(err) = res {
-        println!("{:?}", err)
+        println!("{err:?}");
     }
 
     Ok(())

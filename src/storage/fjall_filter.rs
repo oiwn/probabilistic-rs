@@ -54,7 +54,7 @@ impl FjallFilter {
         // Open or create Fjall database
         let fjall_config = FjallConfig::new(&config.db_path);
         let keyspace = Arc::new(fjall_config.open().map_err(|e| {
-            FilterError::StorageError(format!("Failed to open Fjall DB: {}", e))
+            FilterError::StorageError(format!("Failed to open Fjall DB: {e}"))
         })?);
 
         // Handle configuration based on database existence
@@ -103,8 +103,7 @@ impl FjallFilter {
             Arc::new(keyspace.open_partition("bits", options.clone()).map_err(
                 |e| {
                     FilterError::StorageError(format!(
-                        "Failed to open bits partition: {}",
-                        e
+                        "Failed to open bits partition: {e}"
                     ))
                 },
             )?);
@@ -113,8 +112,7 @@ impl FjallFilter {
             Arc::new(keyspace.open_partition("timestamps", options).map_err(
                 |e| {
                     FilterError::StorageError(format!(
-                        "Failed to open timestamps partition: {}",
-                        e
+                        "Failed to open timestamps partition: {e}"
                     ))
                 },
             )?);
@@ -159,15 +157,14 @@ impl FjallFilter {
             .open_partition("config", PartitionCreateOptions::default())
             .map_err(|e| {
                 FilterError::StorageError(format!(
-                    "Failed to open config partition: {}",
-                    e
+                    "Failed to open config partition: {e}"
                 ))
             })?;
 
         // Try to get config
         if let Some(config_bytes) =
             config_partition.get("filter_config").map_err(|e| {
-                FilterError::StorageError(format!("Failed to read config: {}", e))
+                FilterError::StorageError(format!("Failed to read config: {e}"))
             })?
         {
             let (capacity, false_positive_rate, max_levels, level_duration): (
@@ -205,8 +202,7 @@ impl FjallFilter {
             .open_partition("config", PartitionCreateOptions::default())
             .map_err(|e| {
                 FilterError::StorageError(format!(
-                    "Failed to open config partition: {}",
-                    e
+                    "Failed to open config partition: {e}"
                 ))
             })?;
 
@@ -225,54 +221,25 @@ impl FjallFilter {
         config_partition
             .insert("filter_config", serialized)
             .map_err(|e| {
-                FilterError::StorageError(format!("Failed to save config: {}", e))
+                FilterError::StorageError(format!("Failed to save config: {e}"))
             })?;
 
         // Ensure config is persisted
         keyspace.persist(PersistMode::SyncAll).map_err(|e| {
-            FilterError::StorageError(format!("Failed to persist config: {}", e))
+            FilterError::StorageError(format!("Failed to persist config: {e}"))
         })?;
 
         Ok(())
     }
 
     fn load_state(&mut self) -> Result<()> {
-        // let options = PartitionCreateOptions::default()
-        // .compression(fjall::CompressionType::None);
-        // let bit_vector_size = self.storage.bit_vector_len();
-
-        // Open bits partition
-        // let bits_partition = self
-        //     .keyspace
-        //     .open_partition("bits", options.clone())
-        //     .map_err(|e| {
-        //         FilterError::StorageError(format!(
-        //             "Failed to open bits partition: {}",
-        //             e
-        //         ))
-        //     })?;
-
-        // // Open timestamps partition
-        // let timestamps_partition = self
-        //     .keyspace
-        //     .open_partition("timestamps", options)
-        //     .map_err(|e| {
-        //         FilterError::StorageError(format!(
-        //             "Failed to open timestamps partition: {}",
-        //             e
-        //         ))
-        //     })?;
-
         // Load bits
         for level in 0..self.config.max_levels {
-            let level_key = format!("level_{}", level);
+            let level_key = format!("level_{level}");
 
             if let Some(bits) =
                 self.bits_partition.get(&level_key).map_err(|e| {
-                    FilterError::StorageError(format!(
-                        "Failed to read bits: {}",
-                        e
-                    ))
+                    FilterError::StorageError(format!("Failed to read bits: {e}"))
                 })?
             {
                 // Use the efficient conversion method instead of manual bit-by-bit setting
@@ -280,36 +247,15 @@ impl FjallFilter {
                     self.storage.levels[level] = bit_vec;
                 }
             }
-
-            // if let Some(bits) =
-            //     self.bits_partition.get(&level_key).map_err(|e| {
-            //         FilterError::StorageError(format!(
-            //             "Failed to read bits: {}",
-            //             e
-            //         ))
-            //     })?
-            // {
-            //     let bit_vec: Vec<bool> =
-            //         bits.iter().map(|&byte| byte != 0).collect();
-            //     if bit_vec.len() == bit_vector_size {
-            //         let mut bit_vec_new =
-            //             bitvec![usize, Lsb0; 0; bit_vector_size];
-            //         for (i, &val) in bit_vec.iter().enumerate() {
-            //             bit_vec_new.set(i, val);
-            //         }
-            //         self.storage.levels[level] = bit_vec_new;
-            //     }
-            // }
         }
 
         // Load timestamps
         for level in 0..self.config.max_levels {
-            let ts_key = format!("level_{}", level);
+            let ts_key = format!("level_{level}");
             if let Some(ts_bytes) =
                 self.timestamps_partition.get(&ts_key).map_err(|e| {
                     FilterError::StorageError(format!(
-                        "Failed to read timestamp: {}",
-                        e
+                        "Failed to read timestamp: {e}"
                     ))
                 })?
             {
@@ -329,16 +275,16 @@ impl FjallFilter {
     pub fn save_snapshot(&self) -> Result<()> {
         // Save bits
         for (level, bits) in self.storage.levels.iter().enumerate() {
-            let level_key = format!("level_{}", level);
+            let level_key = format!("level_{level}");
             let bytes = self.storage.bitvec_to_bytes(bits);
             self.bits_partition.insert(&level_key, bytes).map_err(|e| {
-                FilterError::StorageError(format!("Failed to save bits: {}", e))
+                FilterError::StorageError(format!("Failed to save bits: {e}"))
             })?;
         }
 
         // Save timestamps
         for (level, &timestamp) in self.storage.timestamps.iter().enumerate() {
-            let ts_key = format!("level_{}", level);
+            let ts_key = format!("level_{level}");
             let duration = timestamp.duration_since(SystemTime::UNIX_EPOCH)?;
             let ts_bytes =
                 bincode::encode_to_vec(duration, bincode::config::standard())
@@ -350,18 +296,14 @@ impl FjallFilter {
                 .insert(&ts_key, ts_bytes)
                 .map_err(|e| {
                     FilterError::StorageError(format!(
-                        "Failed to save timestamp: {}",
-                        e
+                        "Failed to save timestamp: {e}"
                     ))
                 })?;
         }
 
         // Ensure data is persisted
         self.keyspace.persist(PersistMode::SyncAll).map_err(|e| {
-            FilterError::StorageError(format!(
-                "Failed to persist snapshot: {}",
-                e
-            ))
+            FilterError::StorageError(format!("Failed to persist snapshot: {e}"))
         })?;
 
         Ok(())
@@ -475,6 +417,7 @@ impl ExpiringBloomFilter for FjallFilter {
 
 impl Drop for FjallFilter {
     fn drop(&mut self) {
+        // FIXME: this is probably because of benchmarks
         // Take final snapshot on drop if dirty
         if self.dirty.load(Ordering::Relaxed) {
             // if let Err(err) = self.save_snapshot() {

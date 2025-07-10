@@ -1,5 +1,5 @@
 #![allow(clippy::needless_range_loop)]
-
+#![allow(clippy::uninlined_format_args)]
 mod common;
 
 use colored::Colorize;

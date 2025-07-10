@@ -54,7 +54,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri(format!("/items/{}", test_value))
+                    .uri(format!("/items/{test_value}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -151,7 +151,7 @@ mod tests {
         let query_response = app
             .oneshot(
                 Request::builder()
-                    .uri(format!("/items/{}", test_value))
+                    .uri(format!("/items/{test_value}"))
                     .body(Body::empty())
                     .unwrap(),
             )
