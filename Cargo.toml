@@ -73,6 +73,10 @@ server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:s
 cli = ["dep:clap", "dep:ratatui", "dep:unicode-width", "redb"]
 tests = []
 
+[package.metadata.docs]
+features = ["redb", "cli", "fjall"]  # Exclude "server" feature
+all-features = false
+
 [[bench]]
 name = "bloom_benchmarks"
 harness = false
