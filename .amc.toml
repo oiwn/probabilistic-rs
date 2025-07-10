@@ -1,16 +1,18 @@
 delimiter = "---"
-extensions = [".rs", ".toml"]
+extensions = ["rs"]
 llm_prompt = """
-This is a collection of source code files from a project. Each file is separated by '---' delimiters.
-The files include Git metadata showing their last modification details.
+This is a concatenated source code file containing multiple source files from a project.
+Each file section begins and ends with a delimiter line "---".
+After the opening delimiter, there is metadata about the file:
+- File: relative path to the source file
+- Last commit: Git commit hash of the last change
+- Last update: Unix timestamp of the last change
 
-Key points for analysis:
-1. Focus on the architectural patterns used across files
-2. Identify any potential code quality issues
-3. Note the temporal relationship between changes using Git timestamps
-4. Suggest improvements while preserving the existing architecture:
-   - Code reuse opportunities
-   - Better abstraction boundaries
-   - Performance optimizations
-   - Enhanced error handling and recovery
-"""
+Please analyze the code with these aspects in mind:
+1. The relationship and dependencies between files
+2. The overall architecture and design patterns used
+3. Any potential improvements or issues you notice
+4. Consider the context of changes based on the Git metadata
+
+The code sections follow below:"""
+excluded_folders = []

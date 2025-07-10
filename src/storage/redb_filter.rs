@@ -48,6 +48,12 @@ pub struct RedbFilter {
     last_snapshot: RwLock<SystemTime>, // Track last snapshot time
 }
 
+impl From<redb::Error> for FilterError {
+    fn from(err: redb::Error) -> Self {
+        FilterError::RedbError(Box::new(err))
+    }
+}
+
 impl RedbFilter {
     /// Creates a new or opens an existing RedbSlidingBloomFilter.
     ///

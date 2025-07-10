@@ -28,40 +28,37 @@
 //!     * Since 32 bit hashes used, max capacity would be 2**32-1 (Not sure)
 
 #[cfg(feature = "server")]
-pub mod api;
 pub mod common;
 mod error;
-mod filter;
-#[cfg(feature = "fjall")]
-mod fjall_filter;
 mod hash;
-mod inmemory_filter;
-#[cfg(feature = "redb")]
-mod redb_filter;
+mod probablistic;
+#[cfg(feature = "server")]
+pub mod server;
 mod storage;
 #[cfg(feature = "cli")]
 pub mod tui;
-#[cfg(feature = "server")]
-pub mod types;
 
 pub use error::{FilterError, Result};
-pub use filter::{
-    ExpiringBloomFilter, FilterConfig, FilterConfigBuilder,
-    FilterConfigBuilderError,
-};
-#[cfg(feature = "fjall")]
-pub use fjall_filter::{
-    FjallFilter, FjallFilterConfig, FjallFilterConfigBuilder,
-};
 pub use hash::{
     HashFunction, default_hash_function, optimal_bit_vector_size,
     optimal_num_hashes,
 };
-pub use inmemory_filter::InMemoryFilter;
-#[cfg(feature = "redb")]
-pub use redb_filter::{RedbFilter, RedbFilterConfig, RedbFilterConfigBuilder};
-pub use storage::{FilterStorage, InMemoryStorage};
-#[cfg(feature = "server")]
-pub use types::{
-    AppState, ServerConfig, ServerConfigBuilder, ServerConfigBuilderError,
+pub use probablistic::filter::{
+    self, ExpiringBloomFilter, FilterConfig, FilterConfigBuilder,
+    FilterConfigBuilderError,
 };
+#[cfg(feature = "server")]
+pub use server::types::{
+    AppState, ErrorResponse, InsertRequest, QueryResponse, ServerConfig,
+    ServerConfigBuilder, ServerConfigBuilderError,
+};
+#[cfg(feature = "fjall")]
+pub use storage::fjall_filter::{
+    FjallFilter, FjallFilterConfig, FjallFilterConfigBuilder,
+};
+pub use storage::inmemory_filter::InMemoryFilter;
+#[cfg(feature = "redb")]
+pub use storage::redb_filter::{
+    RedbFilter, RedbFilterConfig, RedbFilterConfigBuilder,
+};
+pub use storage::{FilterStorage, InMemoryStorage};

@@ -61,7 +61,7 @@ fn bench_tricky_issue(c: &mut Criterion) {
     // In benches/fjall_snapshot_benchmarks.rs
 
     for capacity in [10_000, 100_000] {
-        let db_path = temp_db_path(&format!("fjall_tricky_bench_{}", capacity));
+        let db_path = temp_db_path(&format!("fjall_tricky_bench_{capacity}"));
         let test_data = generate_test_data(capacity);
 
         group.bench_with_input(
@@ -96,7 +96,7 @@ fn bench_fjall_snapshots(c: &mut Criterion) {
     // Test different capacities
     for capacity in [10_000, 100_000] {
         // Create database path for this benchmark
-        let db_path = temp_db_path(&format!("fjall_snapshot_bench_{}", capacity));
+        let db_path = temp_db_path(&format!("fjall_snapshot_bench_{capacity}"));
         let test_data = generate_test_data(capacity);
 
         // Setup benchmark that measures snapshot time after inserting elements
@@ -110,7 +110,7 @@ fn bench_fjall_snapshots(c: &mut Criterion) {
                         let mut filter = create_test_filter(path.clone(), *cap);
                         for item in data.iter() {
                             if let Err(e) = filter.insert(item.as_bytes()) {
-                                eprintln!("Insert error (continuing): {}", e);
+                                eprintln!("Insert error (continuing): {e}");
                             }
                         }
                         filter
@@ -118,7 +118,7 @@ fn bench_fjall_snapshots(c: &mut Criterion) {
                     |filter| {
                         // Measure: Time the snapshot operation directly
                         if let Err(e) = filter.save_snapshot() {
-                            eprintln!("Snapshot error: {}", e);
+                            eprintln!("Snapshot error: {e}");
                         }
                     },
                 )
@@ -142,7 +142,7 @@ fn bench_fjall_snapshot_fill_levels(c: &mut Criterion) {
     for fill_percentage in [25, 50, 75] {
         let fill_count = (capacity * fill_percentage) / 100;
         let db_path =
-            temp_db_path(&format!("fjall_snapshot_fill_{}", fill_percentage));
+            temp_db_path(&format!("fjall_snapshot_fill_{fill_percentage}"));
         let test_data = generate_test_data(fill_count);
 
         group.bench_with_input(
@@ -155,7 +155,7 @@ fn bench_fjall_snapshot_fill_levels(c: &mut Criterion) {
                         let mut filter = create_test_filter(path.clone(), *cap);
                         for item in data.iter() {
                             if let Err(e) = filter.insert(item.as_bytes()) {
-                                eprintln!("Insert error (continuing): {}", e);
+                                eprintln!("Insert error (continuing): {e}");
                             }
                         }
                         filter
@@ -163,7 +163,7 @@ fn bench_fjall_snapshot_fill_levels(c: &mut Criterion) {
                     |filter| {
                         // Measure: Time the snapshot operation
                         if let Err(e) = filter.save_snapshot() {
-                            eprintln!("Snapshot error: {}", e);
+                            eprintln!("Snapshot error: {e}");
                         }
                     },
                 )
@@ -185,7 +185,7 @@ fn bench_fjall_multi_level_snapshots(c: &mut Criterion) {
 
     for level_count in [1, 3, 5] {
         let db_path =
-            temp_db_path(&format!("fjall_snapshot_levels_{}", level_count));
+            temp_db_path(&format!("fjall_snapshot_levels_{level_count}"));
         let test_data = generate_test_data(item_count);
 
         group.bench_with_input(
@@ -217,7 +217,7 @@ fn bench_fjall_multi_level_snapshots(c: &mut Criterion) {
                         for chunk in data.chunks(data.len() / *levels) {
                             for item in chunk {
                                 if let Err(e) = filter.insert(item.as_bytes()) {
-                                    eprintln!("Insert error: {}", e);
+                                    eprintln!("Insert error: {e}");
                                 }
                             }
                             // Force level rotation
@@ -229,7 +229,7 @@ fn bench_fjall_multi_level_snapshots(c: &mut Criterion) {
                     |filter| {
                         // Measure the snapshot operation
                         if let Err(e) = filter.save_snapshot() {
-                            eprintln!("Snapshot error: {}", e);
+                            eprintln!("Snapshot error: {e}");
                         }
                     },
                 )

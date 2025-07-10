@@ -30,10 +30,8 @@ pub fn run_app<B: Backend>(
                         }
                         KeyCode::Char('e') => {
                             if let Err(e) = app.filter.cleanup_expired_levels() {
-                                let content = format!(
-                                    "Error cleaning expired levels: {}",
-                                    e
-                                );
+                                let content =
+                                    format!("Error cleaning expired levels: {e}");
                                 app.messages.push(AppMessage {
                                     content,
                                     msg_type: MessageType::Error,
@@ -119,8 +117,7 @@ pub fn run_app<B: Backend>(
                                             app.filter.insert(input.as_bytes())
                                         {
                                             let content = format!(
-                                                "Error inserting element: {}",
-                                                e
+                                                "Error inserting element: {e}"
                                             );
                                             app.messages.push(AppMessage {
                                                 content,
@@ -128,7 +125,7 @@ pub fn run_app<B: Backend>(
                                             });
                                         } else {
                                             let content =
-                                                format!("Inserted: {}", input);
+                                                format!("Inserted: {input}");
                                             app.messages.push(AppMessage {
                                                 content,
                                                 msg_type: MessageType::Info,
@@ -143,8 +140,7 @@ pub fn run_app<B: Backend>(
                                             Ok(exists) => {
                                                 if exists {
                                                     let content = format!(
-                                                        "'{}' exists",
-                                                        input
+                                                        "'{input}' exists",
                                                     );
                                                     app.messages
                                                         .push(AppMessage {
@@ -154,16 +150,14 @@ pub fn run_app<B: Backend>(
                                                     });
                                                 } else {
                                                     let content = format!(
-                                                        "'{}' does not exist",
-                                                        input
+                                                        "'{input}' does not exist",
                                                     );
                                                     app.messages.push(AppMessage { content, msg_type: MessageType::Error });
                                                 }
                                             }
                                             Err(e) => {
                                                 let content = format!(
-                                                    "Error checking element: {}",
-                                                    e
+                                                    "Error checking element: {e}"
                                                 );
                                                 app.messages.push(AppMessage {
                                                     content,

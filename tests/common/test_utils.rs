@@ -1,7 +1,7 @@
 use axum::Router;
 use expiring_bloom_rs::{
     AppState, FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder,
-    api::create_router,
+    server::api::create_router,
 };
 use std::{fs, path::PathBuf};
 use std::{sync::Arc, time::Duration};
@@ -14,7 +14,7 @@ pub struct TestDb {
 impl TestDb {
     /// Create a new test database with a name based on the test name
     pub fn new(test_name: &str) -> Self {
-        let path = format!("test_db_{}.redb", test_name).into();
+        let path = format!("test_db_{test_name}.redb").into();
         Self { path }
     }
 
@@ -67,7 +67,7 @@ pub fn setup_test_redb(
 // FIXME: btw this is detected as dead code while it's not
 #[allow(dead_code)]
 pub async fn setup_test_app(test_name: &str, capacity: usize) -> Router {
-    let test_db = TestDb::new(&format!("server_test_{}", test_name));
+    let test_db = TestDb::new(&format!("server_test_{test_name}"));
 
     let filter = setup_test_redb(
         &test_db.path_string(),

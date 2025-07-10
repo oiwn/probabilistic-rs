@@ -36,5 +36,9 @@ pub enum FilterError {
 
     #[cfg(feature = "redb")]
     #[error("ReDB error: {0}")]
-    RedbError(#[from] redb::Error),
+    RedbError(#[from] Box<redb::Error>),
+
+    #[cfg(feature = "fjall")]
+    #[error("Fjall error: {0}")]
+    FjallError(#[from] Box<fjall::Error>),
 }

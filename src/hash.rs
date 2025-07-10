@@ -200,16 +200,14 @@ mod tests {
         let m = optimal_bit_vector_size(10_000, 0.01);
         assert!(
             m > 90_000 && m < 100_000,
-            "Optimal size outside expected range: {}",
-            m
+            "Optimal size outside expected range: {m}"
         );
 
         // For 1,000 items with 0.1% FPR, optimal size should be around 14,400 bits
         let m = optimal_bit_vector_size(1_000, 0.001);
         assert!(
             m > 13_000 && m < 16_000,
-            "Optimal size outside expected range: {}",
-            m
+            "Optimal size outside expected range: {m}"
         );
 
         // Test boundary values
@@ -235,8 +233,7 @@ mod tests {
         let k = optimal_num_hashes(1_000, 10_000);
         assert!(
             (6..=8).contains(&k),
-            "Optimal hash count outside expected range: {}",
-            k
+            "Optimal hash count outside expected range: {k}"
         );
 
         // Test scaling property - doubling m/n should roughly double k
@@ -257,7 +254,7 @@ mod tests {
 
         // Generate random test data
         let test_data: Vec<Vec<u8>> = (0..num_samples)
-            .map(|i| format!("test_data_{}", i).into_bytes())
+            .map(|i| format!("test_data_{i}").into_bytes())
             .collect();
 
         // Generate hash values using default_hash_function
@@ -278,8 +275,7 @@ mod tests {
         // For good hash functions with 1000 samples in 10000 buckets, we expect roughly 10% coverage
         assert!(
             coverage > 0.05,
-            "Hash distribution coverage too low: {}",
-            coverage
+            "Hash distribution coverage too low: {coverage}"
         );
 
         // Verify the mean is reasonable (should be close to num_samples/capacity)
@@ -287,8 +283,7 @@ mod tests {
         let mean_ratio = mean / expected_mean;
         assert!(
             mean_ratio > 0.8 && mean_ratio < 1.2,
-            "Mean distribution ratio outside expected range: {}",
-            mean_ratio
+            "Mean distribution ratio outside expected range: {mean_ratio}"
         );
     }
 }

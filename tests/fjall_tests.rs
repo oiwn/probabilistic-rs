@@ -12,7 +12,7 @@ mod tests {
 
     impl TestDb {
         fn new(test_name: &str) -> Self {
-            let path = format!("test_db_{}.fjall", test_name).into();
+            let path = format!("test_db_{test_name}.fjall").into();
             Self { path }
         }
 

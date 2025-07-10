@@ -1,5 +1,5 @@
-use expiring_bloom_rs::api::create_router;
-use expiring_bloom_rs::types::AppState;
+use expiring_bloom_rs::server::api::create_router;
+use expiring_bloom_rs::server::types::AppState;
 use expiring_bloom_rs::{
     FilterConfig, RedbFilter, RedbFilterConfigBuilder, ServerConfig,
 };

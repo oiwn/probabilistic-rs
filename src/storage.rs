@@ -10,6 +10,12 @@ use bitvec::{
 };
 use std::{sync::RwLock, time::SystemTime};
 
+#[cfg(feature = "fjall")]
+pub mod fjall_filter;
+pub mod inmemory_filter;
+#[cfg(feature = "redb")]
+pub mod redb_filter;
+
 // Trait for the storage backend
 pub trait FilterStorage {
     /// Sets multiple bits at the specified level and indices
@@ -122,8 +128,7 @@ impl InMemoryStorage {
         let expected_bytes = (self.capacity + 7).div_ceil(8);
         if bytes.len() < expected_bytes {
             return Err(FilterError::StorageError(format!(
-                "Byte array too short for bit vector: expected at least {} bytes",
-                expected_bytes
+                "Byte array too short for bit vector: expected at least {expected_bytes} bytes"
             )));
         }
 
@@ -258,7 +263,7 @@ mod tests {
         // Verify they're the same
         assert_eq!(bv.len(), bv2.len());
         for i in 0..bv.len() {
-            assert_eq!(bv[i], bv2[i], "Bit at position {} doesn't match", i);
+            assert_eq!(bv[i], bv2[i], "Bit at position {i} doesn't match");
         }
     }
 
@@ -287,7 +292,7 @@ mod tests {
 
         assert_eq!(bv.len(), bv2.len());
         for i in 0..bv.len() {
-            assert!(bv2[i], "Bit at position {} should be set", i);
+            assert!(bv2[i], "Bit at position {i} should be set");
         }
     }
 

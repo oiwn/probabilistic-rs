@@ -151,6 +151,7 @@ impl std::fmt::Debug for InMemoryFilter {
 }
 
 #[cfg(test)]
+#[allow(clippy::uninlined_format_args)]
 mod tests {
     use super::*;
     use crate::filter::{ExpiringBloomFilter, FilterConfigBuilder};
@@ -614,7 +615,7 @@ mod tests {
 
         // Rapid insertions to test level creation
         for i in 0..10 {
-            let item = format!("rapid_item_{}", i);
+            let item = format!("rapid_item_{i}");
             filter.insert(item.as_bytes()).unwrap();
             thread::sleep(Duration::from_millis(100)); // Sleep less than LEVEL_TIME
         }
@@ -638,17 +639,17 @@ mod tests {
 
         // Insert items in phases with time gaps
         for phase in 0..3 {
-            println!("Starting phase {}", phase);
+            println!("Starting phase {phase}");
 
             // Insert group of items
             for i in 0..10 {
-                let item = format!("phase{}_item{}", phase, i);
+                let item = format!("phase{phase}_item{i}");
                 filter.insert(item.as_bytes()).unwrap();
             }
 
             // Verify items exist
             for i in 0..10 {
-                let item = format!("phase{}_item{}", phase, i);
+                let item = format!("phase{phase}_item{i}");
                 assert!(
                     filter.query(item.as_bytes()).unwrap(),
                     "Item should exist immediately after insertion"
@@ -663,12 +664,12 @@ mod tests {
             if let Ok(Some(ts)) =
                 filter.storage.get_timestamp(filter.current_level_index)
             {
-                println!("Current level timestamp: {:?}", ts);
+                println!("Current level timestamp: {ts:?}");
             }
 
             // Wait for LESS than full expiration (just enough to rotate levels)
             let wait_time = filter.config().level_duration.as_millis() * 2; // 2 level rotations
-            println!("Waiting for {} ms", wait_time);
+            println!("Waiting for {wait_time} ms");
             thread::sleep(Duration::from_millis(wait_time as u64));
 
             // Run cleanup
@@ -677,9 +678,9 @@ mod tests {
 
             // Current phase items should still exist
             for i in 0..10 {
-                let item = format!("phase{}_item{}", phase, i);
+                let item = format!("phase{phase}_item{i}");
                 let exists = filter.query(item.as_bytes()).unwrap();
-                println!("Item {} exists: {}", item, exists);
+                println!("Item {item} exists: {exists}");
                 assert!(exists, "Item from current phase should exist");
             }
         }
