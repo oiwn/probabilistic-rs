@@ -20,6 +20,7 @@ ebloom.txt
 *.redb
 /tmp
 CLAUDE.md
+*.fjall/
 
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

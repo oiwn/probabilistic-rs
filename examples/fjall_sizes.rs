@@ -3,7 +3,8 @@ mod common;
 
 use common::{format_file_size, generate_random_string};
 use expiring_bloom_rs::{
-    ExpiringBloomFilter, FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder,
+    ExpiringBloomFilter, FilterConfigBuilder, FjallFilter,
+    FjallFilterConfigBuilder,
 };
 use std::{
     fs,
@@ -11,10 +12,25 @@ use std::{
     time::{Duration, Instant},
 };
 
-// Get file size in bytes
-fn get_file_size(path: &Path) -> std::io::Result<u64> {
-    let metadata = fs::metadata(path)?;
-    Ok(metadata.len())
+// Replace the existing get_file_size function with this:
+fn get_directory_size(path: &Path) -> std::io::Result<u64> {
+    if path.is_file() {
+        return fs::metadata(path).map(|m| m.len());
+    }
+
+    let mut total_size = 0;
+    if path.is_dir() {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+            if metadata.is_file() {
+                total_size += metadata.len();
+            } else if metadata.is_dir() {
+                total_size += get_directory_size(&entry.path())?;
+            }
+        }
+    }
+    Ok(total_size)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,18 +38,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let capacities = [100_000, 1_000_000, 10_000_000];
     let mut results = Vec::new();
 
-    // First, create and fill all the files
+    // First, create and fill all the databases
     for &capacity in &capacities {
-        // Create the database path
+        let db_name = format!("bloom_fjall_size_{}.fjall", capacity);
+        let db_path = Path::new(&db_name);
 
-        let file_name = format!("bloom_size_{}.redb", capacity);
-        let db_path = Path::new(&file_name);
+        // Remove existing directory if it exists
+        if db_path.exists() {
+            fs::remove_dir_all(db_path)?;
+        }
 
-        // Calculate 75% of capacity
         let fill_count = (capacity * 75) / 100;
 
         println!(
-            "Creating and filling filter with capacity {} ({}% = {} items)...",
+            "Creating and filling Fjall filter with capacity {} ({}% = {} items)...",
             capacity, 75, fill_count
         );
 
@@ -45,14 +63,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .max_levels(3)
             .build()?;
 
-        let redb_config = RedbFilterConfigBuilder::default()
-            .db_path(db_path.to_path_buf().clone())
+        let fjall_config = FjallFilterConfigBuilder::default()
+            .db_path(db_path.to_path_buf())
             .filter_config(Some(config))
             .snapshot_interval(Duration::from_secs(60))
             .build()?;
 
         // Create a new filter
-        let mut filter = RedbFilter::new(redb_config)?;
+        let mut filter = FjallFilter::new(fjall_config)?;
 
         let start_time = Instant::now();
         // Fill the filter with random data
@@ -72,26 +90,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("Saving snapshot...");
         let start_time = Instant::now();
-        // Force a snapshot to ensure all data is written to disk
         filter.save_snapshot()?;
 
-        let fill_duration = start_time.elapsed();
-        println!("\t(Completed in {:.2?})", fill_duration);
+        let save_duration = start_time.elapsed();
+        println!("\t(Completed in {:.2?})", save_duration);
 
-        // Drop the filter to close the database
+        // Drop the filter to ensure all data is flushed
         drop(filter);
 
-        // Get the file size
-        let path = Path::new(&db_path);
-        let size = get_file_size(path)?;
+        // Get the directory size
+        let size = get_directory_size(db_path)?;
 
         // Store results for later display
         results.push((capacity, fill_count, size));
     }
 
-    // Now print the table with all results
+    // Print the results table (same as in sizes.rs)
     println!("\n┌{:─^60}┐", "");
-    println!("│{:^60}│", "Bloom Filter Size Measurement");
+    println!("│{:^60}│", "Fjall Bloom Filter Size Measurement");
     println!("├{:─^15}┬{:─^15}┬{:─^15}┬{:─^12}┤", "", "", "", "");
     println!(
         "│{:^15}│{:^15}│{:^15}│{:^12}│",
