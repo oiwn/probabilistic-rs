@@ -21,3 +21,7 @@ windows:
     panes:
       - shell_command:
         - emacs -nw notes.org
+  - window_name: yazi
+    panes:
+      - shell_command:
+        - yazi
