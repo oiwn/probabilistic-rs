@@ -26,8 +26,8 @@ fn basic_workflow_example() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create a bloom filter configuration
     let config = BloomConfigBuilder::default()
-        .capacity(100_000)
-        .false_positive_rate(0.001) // 1%
+        .capacity(1_000_000)
+        .false_positive_rate(0.01) // 1%
         .build()?;
 
     let mut filter = BitVectorBloom::new(config)?;
@@ -35,6 +35,14 @@ fn basic_workflow_example() -> Result<(), Box<dyn std::error::Error>> {
     println!("Created bloom filter:");
     println!("  Capacity: {}", filter.capacity());
     println!("  Target FPR: {:.2}%", filter.false_positive_rate() * 100.0);
+    println!(
+        "  Bit vector size: {} bits",
+        filter.params().bit_vector_size
+    );
+    println!(
+        "  Bit vector size in mamory: {}",
+        filter.approx_memory_bits()
+    );
     println!(
         "  Bit vector size: {}",
         bits2hr(filter.params().bit_vector_size)

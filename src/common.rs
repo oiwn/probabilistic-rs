@@ -14,10 +14,12 @@ pub fn bytes2hr(bytes: usize) -> String {
 pub fn bits2hr(bits: usize) -> String {
     let bytes = bits as f64 / 8.0; // Convert bits to bytes
     if bytes < 1024.0 {
-        format!("{:.2} KB", bytes / 1024.0)
+        format!("{:.2} bytes", bytes) // Show actual bytes
     } else if bytes < 1024.0 * 1024.0 {
-        format!("{:.2} MB", bytes / (1024.0 * 1024.0))
+        format!("{:.2} KB", bytes / 1024.0) // KB = bytes / 1024
+    } else if bytes < 1024.0 * 1024.0 * 1024.0 {
+        format!("{:.2} MB", bytes / (1024.0 * 1024.0)) // MB = bytes / (1024²)
     } else {
-        format!("{:.2} GB", bytes / (1024.0 * 1024.0 * 1024.0))
+        format!("{:.2} GB", bytes / (1024.0 * 1024.0 * 1024.0)) // GB = bytes / (1024³)
     }
 }

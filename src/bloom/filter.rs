@@ -42,6 +42,16 @@ impl BitVectorBloom {
     pub fn params(&self) -> &BloomParams {
         &self.params
     }
+
+    pub fn approx_memory_bits(&self) -> usize {
+        let words = self.bits.as_raw_slice(); // &[u64]
+        let memory_bytes = words.len() * std::mem::size_of::<u64>();
+        memory_bytes
+    }
+
+    pub fn bits_per_item(&self) -> f64 {
+        self.approx_memory_bits() as f64 / self.config.capacity as f64
+    }
 }
 
 impl BloomFilter for BitVectorBloom {
