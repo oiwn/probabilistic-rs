@@ -1,3 +1,5 @@
+#![allow(clippy::uninlined_format_args)]
+
 // Helper method to format bytes in human-readable form
 pub fn bytes2hr(bytes: usize) -> String {
     if bytes < 1024 {

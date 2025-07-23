@@ -1,46 +1,37 @@
-use super::{BloomConfig, BloomError, BloomParams, BloomResult};
+use super::{BloomError, BloomFilterConfig, BloomFilterOps, BloomResult};
+use crate::hash::{optimal_bit_vector_size, optimal_num_hashes};
 use bitvec::{bitvec, order::Lsb0, vec::BitVec};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-pub trait BloomFilter {
-    fn insert(&mut self, item: &[u8]) -> BloomResult<()>;
-    fn contains(&self, item: &[u8]) -> BloomResult<bool>;
-    fn clear(&mut self) -> BloomResult<()>;
-
-    // Statistics
-    fn estimated_count(&self) -> usize;
-    fn capacity(&self) -> usize;
-    fn false_positive_rate(&self) -> f64;
-}
-
-pub struct BitVectorBloom {
-    config: BloomConfig,
-    params: BloomParams,
+pub struct BloomFilter {
+    config: BloomFilterConfig,
+    bit_vector_size: usize,
+    num_hashes: usize,
     bits: BitVec<usize, Lsb0>,
     insert_count: AtomicUsize,
 }
 
-impl BitVectorBloom {
-    pub fn new(config: BloomConfig) -> BloomResult<Self> {
+impl BloomFilter {
+    pub fn new(config: BloomFilterConfig) -> BloomResult<Self> {
         config.validate()?;
 
-        let params = BloomParams::from(&config);
-        let bits = bitvec![0; params.bit_vector_size];
+        let bit_vector_size =
+            optimal_bit_vector_size(config.capacity, config.false_positive_rate);
+        let num_hashes = optimal_num_hashes(config.capacity, bit_vector_size);
+
+        let bits = bitvec![0; bit_vector_size];
 
         Ok(Self {
             config,
-            params,
+            bit_vector_size,
+            num_hashes,
             bits,
             insert_count: AtomicUsize::new(0),
         })
     }
 
-    pub fn config(&self) -> &BloomConfig {
+    pub fn config(&self) -> &BloomFilterConfig {
         &self.config
-    }
-
-    pub fn params(&self) -> &BloomParams {
-        &self.params
     }
 
     pub fn approx_memory_bits(&self) -> usize {
@@ -54,20 +45,20 @@ impl BitVectorBloom {
     }
 }
 
-impl BloomFilter for BitVectorBloom {
+impl BloomFilterOps for BloomFilter {
     fn insert(&mut self, item: &[u8]) -> BloomResult<()> {
         let indices = (self.config.hash_function)(
             item,
-            self.params.num_hashes,
-            self.params.bit_vector_size,
+            self.num_hashes,
+            self.bit_vector_size,
         );
 
         for idx in indices {
             let idx = idx as usize;
-            if idx >= self.params.bit_vector_size {
+            if idx >= self.bit_vector_size {
                 return Err(BloomError::IndexOutOfBounds {
                     index: idx,
-                    capacity: self.params.bit_vector_size,
+                    capacity: self.bit_vector_size,
                 });
             }
             self.bits.set(idx, true);
@@ -80,16 +71,16 @@ impl BloomFilter for BitVectorBloom {
     fn contains(&self, item: &[u8]) -> BloomResult<bool> {
         let indices = (self.config.hash_function)(
             item,
-            self.params.num_hashes,
-            self.params.bit_vector_size,
+            self.num_hashes,
+            self.bit_vector_size,
         );
 
         for idx in indices {
             let idx = idx as usize;
-            if idx >= self.params.bit_vector_size {
+            if idx >= self.bit_vector_size {
                 return Err(BloomError::IndexOutOfBounds {
                     index: idx,
-                    capacity: self.params.bit_vector_size,
+                    capacity: self.bit_vector_size,
                 });
             }
             if !self.bits[idx] {

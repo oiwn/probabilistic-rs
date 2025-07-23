@@ -3,7 +3,7 @@ mod common;
 
 use expiring_bloom_rs::{
     ExpiringBloomFilter, FilterConfigBuilder, FilterStorage, InMemoryFilter,
-    common::format_memory_usage, optimal_bit_vector_size, optimal_num_hashes,
+    common::bits2hr, optimal_bit_vector_size, optimal_num_hashes,
 };
 use rand::seq::IndexedRandom;
 use std::{collections::HashSet, time::Duration};
@@ -155,7 +155,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nMemory Usage Analysis:");
     println!(
         "  Total memory used by storage: {}",
-        format_memory_usage(filter.storage.approx_memory_usage())
+        bits2hr(filter.storage.approx_memory_usage())
     );
     println!(
         "  Memory per level: {:.2} KB",
