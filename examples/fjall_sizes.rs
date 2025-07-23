@@ -137,5 +137,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!();
     }
 
+    println!("\nCleaning up database files...");
+    for (capacity, _, _) in &results {
+        let file_name = format!("bloom_size_{}.redb", capacity);
+        let db_path = Path::new(&file_name);
+        if db_path.exists() {
+            let _ = fs::remove_file(db_path);
+        }
+    }
+
     Ok(())
 }

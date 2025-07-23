@@ -27,7 +27,7 @@
 //!       access during sub-filter rotation.
 //!     * Since 32 bit hashes used, max capacity would be 2**32-1 (Not sure)
 
-#[cfg(feature = "server")]
+pub mod bloom;
 pub mod common;
 mod error;
 mod hash;
