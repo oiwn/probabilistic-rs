@@ -36,8 +36,7 @@ impl BloomFilter {
 
     pub fn approx_memory_bits(&self) -> usize {
         let words = self.bits.as_raw_slice(); // &[u64]
-        let memory_bytes = words.len() * std::mem::size_of::<u64>();
-        memory_bytes
+        words.len() * std::mem::size_of::<u64>()
     }
 
     pub fn bits_per_item(&self) -> f64 {
