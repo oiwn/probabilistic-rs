@@ -17,5 +17,5 @@ pub enum BloomError {
     InvalidFalsePositiveRate { rate: f64 },
     #[cfg(feature = "redb")]
     #[error("ReDB error: {0}")]
-    RedbError(#[from] redb::Error),
+    RedbError(#[from] Box<redb::Error>),
 }
