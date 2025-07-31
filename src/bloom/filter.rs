@@ -1,12 +1,16 @@
 use super::{BloomError, BloomFilterConfig, BloomFilterOps, BloomResult};
-use crate::hash::{optimal_bit_vector_size, optimal_num_hashes};
+use crate::{
+    bloom::traits::BloomFilterStats,
+    hash::{optimal_bit_vector_size, optimal_num_hashes},
+};
+use async_trait::async_trait;
 use bitvec::{bitvec, order::Lsb0, vec::BitVec};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub struct BloomFilter {
     config: BloomFilterConfig,
-    bit_vector_size: usize,
-    num_hashes: usize,
+    pub bit_vector_size: usize,
+    pub num_hashes: usize,
     bits: BitVec<usize, Lsb0>,
     insert_count: AtomicUsize,
 }
@@ -35,8 +39,8 @@ impl BloomFilter {
     }
 
     pub fn approx_memory_bits(&self) -> usize {
-        let words = self.bits.as_raw_slice(); // &[u64]
-        words.len() * std::mem::size_of::<u64>()
+        let words = self.bits.as_raw_slice(); // &[usize]
+        words.len() * std::mem::size_of::<usize>()
     }
 
     pub fn bits_per_item(&self) -> f64 {
@@ -44,8 +48,23 @@ impl BloomFilter {
     }
 }
 
+impl BloomFilterStats for BloomFilter {
+    fn insert_count(&self) -> usize {
+        self.insert_count.load(Ordering::Relaxed)
+    }
+
+    fn capacity(&self) -> usize {
+        self.config.capacity
+    }
+
+    fn false_positive_rate(&self) -> f64 {
+        self.config.false_positive_rate
+    }
+}
+
+#[async_trait]
 impl BloomFilterOps for BloomFilter {
-    fn insert(&mut self, item: &[u8]) -> BloomResult<()> {
+    async fn insert(&mut self, item: &[u8]) -> BloomResult<()> {
         let indices = (self.config.hash_function)(
             item,
             self.num_hashes,
@@ -67,7 +86,7 @@ impl BloomFilterOps for BloomFilter {
         Ok(())
     }
 
-    fn contains(&self, item: &[u8]) -> BloomResult<bool> {
+    async fn contains(&self, item: &[u8]) -> BloomResult<bool> {
         let indices = (self.config.hash_function)(
             item,
             self.num_hashes,
@@ -89,21 +108,9 @@ impl BloomFilterOps for BloomFilter {
         Ok(true)
     }
 
-    fn clear(&mut self) -> BloomResult<()> {
+    async fn clear(&mut self) -> BloomResult<()> {
         self.bits.fill(false);
         self.insert_count.store(0, Ordering::Relaxed);
         Ok(())
-    }
-
-    fn estimated_count(&self) -> usize {
-        self.insert_count.load(Ordering::Relaxed)
-    }
-
-    fn capacity(&self) -> usize {
-        self.config.capacity
-    }
-
-    fn false_positive_rate(&self) -> f64 {
-        self.config.false_positive_rate
     }
 }
