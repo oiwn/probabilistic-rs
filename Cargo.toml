@@ -79,6 +79,9 @@ tests = []
 features = ["redb", "cli", "fjall"]  # Exclude "server" feature
 all-features = false
 
+[lints.rust]
+async_fn_in_trait = "allow"
+
 [[bench]]
 name = "bloom_benchmarks"
 harness = false
