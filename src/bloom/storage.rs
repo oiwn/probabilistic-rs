@@ -1,10 +1,6 @@
-use super::{
-    BloomError, BloomFilter, BloomFilterConfig, BloomResult, PersistenceConfig,
-    PersistentBloomFilter, StorageBackend,
-};
+use super::{BloomError, BloomFilterConfig, BloomResult, StorageBackend};
 use async_trait::async_trait;
 use std::sync::Arc;
-use tracing::{debug, info};
 
 #[cfg(feature = "fjall")]
 pub struct FjallBackend {
@@ -22,17 +18,14 @@ impl StorageBackend for FjallBackend {
         self.config_partition
             .insert("bloom_config", config_bytes)
             .map_err(|e| {
-                BloomError::StorageError(format!("Failed to save config: {}", e))
+                BloomError::StorageError(format!("Failed to save config: {e}"))
             })?;
 
         // Ensure config is persisted to disk
         self.keyspace
             .persist(fjall::PersistMode::SyncAll)
             .map_err(|e| {
-                BloomError::StorageError(format!(
-                    "Failed to persist config: {}",
-                    e
-                ))
+                BloomError::StorageError(format!("Failed to persist config: {e}"))
             })?;
 
         Ok(())
@@ -46,8 +39,7 @@ impl StorageBackend for FjallBackend {
             }
             Ok(None) => Ok(None),
             Err(e) => Err(BloomError::StorageError(format!(
-                "Failed to load config: {}",
-                e
+                "Failed to load config: {e}"
             ))),
         }
     }
@@ -57,14 +49,11 @@ impl StorageBackend for FjallBackend {
         chunks: &[(usize, Vec<u8>)],
     ) -> BloomResult<()> {
         for (chunk_id, chunk_data) in chunks {
-            let key = format!("chunk_{}", chunk_id);
+            let key = format!("chunk_{chunk_id}");
             self.chunks_partition
                 .insert(&key, chunk_data)
                 .map_err(|e| {
-                    BloomError::StorageError(format!(
-                        "Failed to save chunk: {}",
-                        e
-                    ))
+                    BloomError::StorageError(format!("Failed to save chunk: {e}"))
                 })?;
         }
 
@@ -72,10 +61,7 @@ impl StorageBackend for FjallBackend {
         self.keyspace
             .persist(fjall::PersistMode::SyncAll)
             .map_err(|e| {
-                BloomError::StorageError(format!(
-                    "Failed to persist chunks: {}",
-                    e
-                ))
+                BloomError::StorageError(format!("Failed to persist chunks: {e}"))
             })?;
 
         Ok(())
@@ -89,7 +75,7 @@ impl StorageBackend for FjallBackend {
 
         for item in iter {
             let (key, value) = item.map_err(|e| {
-                BloomError::StorageError(format!("Failed to read chunk: {}", e))
+                BloomError::StorageError(format!("Failed to read chunk: {e}"))
             })?;
 
             // Parse chunk_id from key "chunk_123"
@@ -117,7 +103,7 @@ impl FjallBackend {
     pub async fn new(db_path: std::path::PathBuf) -> BloomResult<Self> {
         let config = fjall::Config::new(db_path);
         let keyspace = Arc::new(config.open().map_err(|e| {
-            BloomError::StorageError(format!("Failed to open Fjall DB: {}", e))
+            BloomError::StorageError(format!("Failed to open Fjall DB: {e}"))
         })?);
 
         let options = fjall::PartitionCreateOptions::default();
@@ -127,8 +113,7 @@ impl FjallBackend {
                 .open_partition("config", options.clone())
                 .map_err(|e| {
                     BloomError::StorageError(format!(
-                        "Failed to open config partition: {}",
-                        e
+                        "Failed to open config partition: {e}",
                     ))
                 })?,
         );
@@ -136,8 +121,7 @@ impl FjallBackend {
         let chunks_partition = Arc::new(
             keyspace.open_partition("chunks", options).map_err(|e| {
                 BloomError::StorageError(format!(
-                    "Failed to open chunks partition: {}",
-                    e
+                    "Failed to open chunks partition: {e}"
                 ))
             })?,
         );

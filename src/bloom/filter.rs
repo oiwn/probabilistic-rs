@@ -1,6 +1,6 @@
 use super::{
-    BloomError, BloomFilterConfig, BloomFilterOps, BloomResult,
-    PersistenceConfig, SnapshotConfig, StorageBackend, storage::FjallBackend,
+    BloomError, BloomFilterConfig, BloomFilterOps, BloomResult, StorageBackend,
+    storage::FjallBackend,
 };
 use crate::{
     bloom::traits::BloomFilterStats,
@@ -8,7 +8,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use bitvec::{bitvec, order::Lsb0, vec::BitVec};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use std::{
     path::PathBuf,
@@ -41,8 +41,7 @@ impl BloomFilter {
             if let Some(parent) = persistence_config.db_path.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| {
                     BloomError::PersistenceError(format!(
-                        "Failed to create db directory: {}",
-                        e
+                        "Failed to create db directory: {e}"
                     ))
                 })?;
             }
@@ -52,8 +51,7 @@ impl BloomFilter {
                 std::fs::remove_dir_all(&persistence_config.db_path).map_err(
                     |e| {
                         BloomError::PersistenceError(format!(
-                            "Failed to delete existing DB: {}",
-                            e
+                            "Failed to delete existing DB: {e}"
                         ))
                     },
                 )?;
@@ -89,8 +87,7 @@ impl BloomFilter {
         // Check if DB exists
         if !db_path.exists() {
             return Err(BloomError::PersistenceError(format!(
-                "Database does not exist at {:?}",
-                db_path
+                "Database does not exist at {db_path:?}"
             )));
         }
 
@@ -172,7 +169,7 @@ impl BloomFilter {
             let chunk_size =
                 config.persistence.as_ref().unwrap().chunk_size_bytes;
             let chunk_count =
-                (bit_vector_size + chunk_size * 8 - 1) / (chunk_size * 8);
+                (bit_vector_size + chunk_size * 8 - 1).div_ceil(chunk_size * 8);
             (chunk_size, Some(bitvec![0; chunk_count]))
         } else {
             (0, None)
@@ -196,8 +193,8 @@ impl BloomFilter {
 
         if self.chunk_size_bytes > 0 {
             let chunk_size_bits = self.chunk_size_bytes * 8;
-            let num_chunks =
-                (self.bit_vector_size + chunk_size_bits - 1) / chunk_size_bits;
+            let num_chunks = (self.bit_vector_size + chunk_size_bits - 1)
+                .div_ceil(chunk_size_bits);
 
             for chunk_id in 0..num_chunks {
                 let chunk_data =
@@ -298,7 +295,8 @@ impl BloomFilter {
 
     pub fn approx_memory_bits(&self) -> usize {
         let words = self.bits.as_raw_slice(); // &[usize]
-        words.len() * std::mem::size_of::<usize>()
+        // words.len() * std::mem::size_of::<usize>()
+        std::mem::size_of_val(words)
     }
 
     pub fn bits_per_item(&self) -> f64 {

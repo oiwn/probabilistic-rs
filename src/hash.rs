@@ -30,10 +30,6 @@ use std::io::Cursor;
 /// used to set or check bits in the Bloom filter's bit vector.
 pub type HashFunction = fn(&[u8], usize, usize) -> Vec<u32>;
 
-pub fn default_hash_fn() -> HashFunction {
-    default_hash_function
-}
-
 pub(crate) fn hash_murmur32(key: &[u8]) -> u32 {
     let mut cursor = Cursor::new(key);
     murmur3_32(&mut cursor, 0).expect("Failed to compute Murmur3 hash")
