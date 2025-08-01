@@ -24,7 +24,7 @@ pub struct BloomFilter {
 
     // Persistence support
     #[cfg(feature = "fjall")]
-    storage: Option<FjallBackend>,
+    pub storage: Option<FjallBackend>,
     chunk_size_bytes: usize,
     pub(crate) dirty_chunks: Option<BitVec<usize, Lsb0>>,
 }
@@ -57,7 +57,7 @@ impl BloomFilter {
                         ))
                     },
                 )?;
-                println!(
+                warn!(
                     "Deleted existing database at {:?}",
                     persistence_config.db_path
                 );
@@ -65,14 +65,14 @@ impl BloomFilter {
 
             let storage =
                 FjallBackend::new(persistence_config.db_path.clone()).await?;
-            println!(
+            info!(
                 "Created new Fjall backend at {:?}",
                 persistence_config.db_path
             );
 
             // Save config to new DB
             storage.save_config(&config).await?;
-            println!("Saved config to database");
+            info!("Saved config to database.");
 
             Some(storage)
         } else {
@@ -96,12 +96,12 @@ impl BloomFilter {
 
         // Create Fjall backend for existing DB
         let backend = FjallBackend::new(db_path.clone()).await?;
-        println!("Created Fjall backend for existing DB at {:?}", db_path);
+        info!("Created Fjall backend for existing DB at {:?}", db_path);
 
         // Load config from DB
         let loaded_config = match backend.load_config().await? {
             Some(config) => {
-                println!(
+                info!(
                     "Loaded config from DB - capacity: {}, FPR: {:.3}%",
                     config.capacity,
                     config.false_positive_rate * 100.0
@@ -119,8 +119,14 @@ impl BloomFilter {
         let mut filter = Self::build_filter(loaded_config, Some(backend)).await?;
 
         // Load snapshot data from DB
-        println!("TODO: Loading snapshot data from DB...");
-        // filter.load_from_storage().await?;
+        if let Some(ref backend) = filter.storage {
+            if let Some(chunks) = backend.load_snapshot().await? {
+                filter.reconstruct_from_chunks(&chunks)?;
+                info!("Loaded {} chunks from database", chunks.len());
+            } else {
+                info!("No snapshot data found in database");
+            }
+        }
 
         Ok(filter)
     }
@@ -153,7 +159,7 @@ impl BloomFilter {
     /// Internal helper to build the actual BloomFilter struct
     async fn build_filter(
         config: BloomFilterConfig,
-        #[cfg(feature = "fjall")] storage: Option<FjallBackend>,
+        storage: Option<FjallBackend>,
     ) -> BloomResult<Self> {
         // Calculate bloom filter parameters
         let bit_vector_size =
@@ -183,6 +189,107 @@ impl BloomFilter {
             chunk_size_bytes,
             dirty_chunks,
         })
+    }
+
+    fn extract_all_chunks(&self) -> Vec<(usize, Vec<u8>)> {
+        let mut chunks = Vec::new();
+
+        if self.chunk_size_bytes > 0 {
+            let chunk_size_bits = self.chunk_size_bytes * 8;
+            let num_chunks =
+                (self.bit_vector_size + chunk_size_bits - 1) / chunk_size_bits;
+
+            for chunk_id in 0..num_chunks {
+                let chunk_data =
+                    self.extract_chunk_bytes(chunk_id, chunk_size_bits);
+                chunks.push((chunk_id, chunk_data));
+            }
+
+            debug!("Extracted {} chunks for snapshot", chunks.len());
+        }
+
+        chunks
+    }
+
+    pub async fn save_snapshot(&self) -> BloomResult<()> {
+        #[cfg(feature = "fjall")]
+        if let Some(ref backend) = self.storage {
+            // Extract all chunks (not just dirty ones for now - keep it simple)
+            let chunks = self.extract_all_chunks();
+            backend.save_snapshot(&chunks).await?;
+            info!("Saved {} chunks to database", chunks.len());
+        }
+        Ok(())
+    }
+
+    pub fn extract_dirty_chunks(&self) -> Vec<(usize, Vec<u8>)> {
+        let mut chunks = Vec::new();
+
+        if let Some(ref dirty_chunks) = self.dirty_chunks {
+            let chunk_size_bits = self.chunk_size_bytes * 8;
+
+            for chunk_id in 0..dirty_chunks.len() {
+                if dirty_chunks[chunk_id] {
+                    let chunk_data =
+                        self.extract_chunk_bytes(chunk_id, chunk_size_bits);
+                    chunks.push((chunk_id, chunk_data));
+                }
+            }
+            debug!("Extracted {} dirty chunks for snapshot", chunks.len());
+        }
+
+        chunks
+    }
+
+    fn extract_chunk_bytes(
+        &self,
+        chunk_id: usize,
+        chunk_size_bits: usize,
+    ) -> Vec<u8> {
+        let start_bit = chunk_id * chunk_size_bits;
+        let end_bit = std::cmp::min(start_bit + chunk_size_bits, self.bits.len());
+
+        // Convert bit range to bytes
+        let chunk_bits = &self.bits[start_bit..end_bit];
+        let mut bytes = Vec::new();
+
+        // Pack bits into bytes (8 bits per byte)
+        for byte_chunk in chunk_bits.chunks(8) {
+            let mut byte = 0u8;
+            for (bit_pos, bit) in byte_chunk.iter().enumerate() {
+                if *bit {
+                    byte |= 1 << bit_pos;
+                }
+            }
+            bytes.push(byte);
+        }
+
+        bytes
+    }
+
+    fn reconstruct_from_chunks(
+        &mut self,
+        chunks: &[(usize, Vec<u8>)],
+    ) -> BloomResult<()> {
+        let chunk_size_bits = self.chunk_size_bytes * 8;
+
+        for (chunk_id, chunk_bytes) in chunks {
+            let start_bit = chunk_id * chunk_size_bits;
+
+            // Unpack bytes back to bits
+            for (byte_idx, &byte) in chunk_bytes.iter().enumerate() {
+                for bit_pos in 0..8 {
+                    let bit_idx = start_bit + byte_idx * 8 + bit_pos;
+                    if bit_idx < self.bits.len() {
+                        let bit_value = (byte & (1 << bit_pos)) != 0;
+                        self.bits.set(bit_idx, bit_value);
+                    }
+                }
+            }
+        }
+
+        debug!("Reconstructed filter from {} chunks", chunks.len());
+        Ok(())
     }
 
     pub fn config(&self) -> &BloomFilterConfig {
