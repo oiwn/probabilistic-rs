@@ -15,7 +15,17 @@ pub enum BloomError {
 
     #[error("False positive rate must be between 0 and 1, got {rate}")]
     InvalidFalsePositiveRate { rate: f64 },
-    #[cfg(feature = "redb")]
-    #[error("ReDB error: {0}")]
-    RedbError(#[from] Box<redb::Error>),
+
+    #[error("Persistence error: {0}")]
+    PersistenceError(String),
+
+    #[error("Storage backend error: {0}")]
+    StorageError(String),
+
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
+
+    #[cfg(feature = "fjall")]
+    #[error("Fjall error: {0}")]
+    FjallError(#[from] Box<fjall::Error>),
 }

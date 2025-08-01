@@ -20,9 +20,10 @@ fnv = "1"
 murmur3 = "0.5"
 thiserror = "2"
 derive_builder = "0.20"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing = "0.1"
 bitvec = "1"
+serde = { version = "1", features = ["derive"] }
 
 # server
 dotenvy = { version = "0.15", optional = true }
@@ -30,7 +31,6 @@ axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
 utoipa = { version = "5.3", features = ["axum_extras"], optional = true }
 utoipa-swagger-ui = { version = "9", features = ["axum"], optional = true }
-serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 # cli
 clap = { version = "4.5", features = ["derive"], optional = true }
@@ -49,6 +49,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 tower = "0.5"
 comfy-table = "7.1"
 colored = "3.0"
+tokio = "1"
 
 [[bin]]
 name = "expblf"
@@ -70,13 +71,16 @@ default = ["redb", "server", "cli", "fjall"]
 docs-only = ["cli", "redb", "fjall"]
 redb = ["dep:redb"]
 fjall = ["dep:fjall"]
-server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde", "dep:serde_json", "dep:dotenvy", "dep:redb"]
+server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde_json", "dep:dotenvy", "dep:redb"]
 cli = ["dep:clap", "dep:ratatui", "dep:unicode-width", "redb"]
 tests = []
 
 [package.metadata.docs]
 features = ["redb", "cli", "fjall"]  # Exclude "server" feature
 all-features = false
+
+[lints.rust]
+async_fn_in_trait = "allow"
 
 [[bench]]
 name = "bloom_benchmarks"

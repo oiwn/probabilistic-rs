@@ -1,7 +1,10 @@
-use crate::hash::{HashFunction, default_hash_function};
+use super::{BloomError, BloomResult};
+use bincode::{Decode, Encode};
 use derive_builder::Builder;
+use serde::{Deserialize, Serialize};
+use std::{path::PathBuf, time::Duration};
 
-#[derive(Clone, Debug, Builder)]
+#[derive(Clone, Debug, Builder, Serialize, Deserialize, Decode, Encode)]
 #[builder(pattern = "owned")]
 pub struct BloomFilterConfig {
     #[builder(default = "1_000_000")]
@@ -10,8 +13,34 @@ pub struct BloomFilterConfig {
     #[builder(default = "0.01")]
     pub false_positive_rate: f64,
 
-    #[builder(default = "default_hash_function")]
-    pub hash_function: HashFunction,
+    #[builder(default = "None")]
+    pub persistence: Option<PersistenceConfig>,
+}
+
+#[derive(Clone, Debug, Builder, Serialize, Deserialize, Decode, Encode)]
+pub struct SnapshotConfig {
+    pub interval: Duration,
+    pub after_inserts: usize,
+    pub auto_enabled: bool,
+}
+
+impl Default for SnapshotConfig {
+    fn default() -> Self {
+        Self {
+            interval: Duration::from_secs(60),
+            after_inserts: 10000,
+            auto_enabled: true,
+        }
+    }
+}
+
+#[derive(Builder, Clone, Debug, Serialize, Deserialize, Decode, Encode)]
+pub struct PersistenceConfig {
+    pub db_path: PathBuf,
+    #[builder(default)]
+    pub snapshot_config: SnapshotConfig,
+    #[builder(default = "4096")] // 4KB chunks by default
+    pub chunk_size_bytes: usize,
 }
 
 impl BloomFilterConfig {
@@ -27,5 +56,16 @@ impl BloomFilterConfig {
             ));
         }
         Ok(())
+    }
+
+    pub fn to_bytes(&self) -> BloomResult<Vec<u8>> {
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .map_err(|e| BloomError::SerializationError(e.to_string()))
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> BloomResult<Self> {
+        bincode::decode_from_slice(bytes, bincode::config::standard())
+            .map(|(config, _)| config)
+            .map_err(|e| BloomError::SerializationError(e.to_string()))
     }
 }

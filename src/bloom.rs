@@ -2,20 +2,16 @@
 pub mod config;
 pub mod error;
 pub mod filter;
-// pub mod storage;
+pub mod storage;
+pub mod traits;
 
-// pub use storage::{BloomStorage, InMemoryBloomStorage, RedbBloomStorage};
-pub use config::{BloomFilterConfig, BloomFilterConfigBuilder};
+pub use config::{
+    BloomFilterConfig, BloomFilterConfigBuilder, PersistenceConfig,
+    PersistenceConfigBuilder, SnapshotConfig,
+};
 pub use error::{BloomError, BloomResult};
 pub use filter::BloomFilter;
-
-pub trait BloomFilterOps {
-    fn insert(&mut self, item: &[u8]) -> BloomResult<()>;
-    fn contains(&self, item: &[u8]) -> BloomResult<bool>;
-    fn clear(&mut self) -> BloomResult<()>;
-
-    // Statistics
-    fn estimated_count(&self) -> usize;
-    fn capacity(&self) -> usize;
-    fn false_positive_rate(&self) -> f64;
-}
+pub use traits::{
+    BloomFilterOps, BloomFilterStats, BulkBloomFilterOps, PersistentBloomFilter,
+    StorageBackend,
+};
