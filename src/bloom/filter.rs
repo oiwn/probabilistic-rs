@@ -4,12 +4,16 @@ use super::{
 };
 use crate::{
     bloom::traits::BloomFilterStats,
-    hash::{optimal_bit_vector_size, optimal_num_hashes},
+    hash::{default_hash_function, optimal_bit_vector_size, optimal_num_hashes},
 };
 use async_trait::async_trait;
 use bitvec::{bitvec, order::Lsb0, vec::BitVec};
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use tracing::{debug, error, info, warn};
+
+use std::{
+    path::PathBuf,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 pub struct BloomFilter {
     config: BloomFilterConfig,
@@ -43,19 +47,34 @@ impl BloomFilter {
                 })?;
             }
 
-            // TODO: Delete existing DB if present
+            // Delete existing DB if present
+            if persistence_config.db_path.exists() {
+                std::fs::remove_dir_all(&persistence_config.db_path).map_err(
+                    |e| {
+                        BloomError::PersistenceError(format!(
+                            "Failed to delete existing DB: {}",
+                            e
+                        ))
+                    },
+                )?;
+                println!(
+                    "Deleted existing database at {:?}",
+                    persistence_config.db_path
+                );
+            }
+
+            let storage =
+                FjallBackend::new(persistence_config.db_path.clone()).await?;
             println!(
-                "TODO: Delete existing DB at {:?}",
+                "Created new Fjall backend at {:?}",
                 persistence_config.db_path
             );
 
-            // TODO: Create new Fjall backend
-            println!("TODO: Create new Fjall backend");
+            // Save config to new DB
+            storage.save_config(&config).await?;
+            println!("Saved config to database");
 
-            // TODO: Save config to new DB
-            println!("TODO: Save config to DB");
-
-            None // Dummy for now
+            Some(storage)
         } else {
             None
         };
@@ -65,46 +84,45 @@ impl BloomFilter {
 
     /// Loads an existing bloom filter from database
     /// Returns error if database doesn't exist
+    #[cfg(feature = "fjall")]
     pub async fn load(db_path: PathBuf) -> BloomResult<Self> {
-        #[cfg(feature = "fjall")]
-        {
-            // Check if DB exists
-            if !db_path.exists() {
-                return Err(BloomError::PersistenceError(format!(
-                    "Database does not exist at {:?}",
-                    db_path
-                )));
-            }
-
-            // TODO: Create Fjall backend
-            println!(
-                "TODO: Create Fjall backend for existing DB at {:?}",
+        // Check if DB exists
+        if !db_path.exists() {
+            return Err(BloomError::PersistenceError(format!(
+                "Database does not exist at {:?}",
                 db_path
-            );
-
-            // TODO: Load config from DB
-            println!("TODO: Load config from DB");
-            let loaded_config = BloomFilterConfig {
-                capacity: 10000, // Dummy values
-                false_positive_rate: 0.01,
-                hash_function: crate::hash::default_hash_function,
-                persistence: Some(PersistenceConfig {
-                    db_path: db_path.clone(),
-                    snapshot_config: SnapshotConfig::default(),
-                    chunk_size_bytes: 4096,
-                }),
-            };
-
-            // TODO: Load snapshot data
-            println!("TODO: Load snapshot data from DB");
-
-            Self::build_filter(loaded_config, None).await
+            )));
         }
 
-        #[cfg(not(feature = "fjall"))]
-        Err(BloomError::PersistenceError(
-            "Cannot load from database - fjall feature not enabled".to_string(),
-        ))
+        // Create Fjall backend for existing DB
+        let backend = FjallBackend::new(db_path.clone()).await?;
+        println!("Created Fjall backend for existing DB at {:?}", db_path);
+
+        // Load config from DB
+        let loaded_config = match backend.load_config().await? {
+            Some(config) => {
+                println!(
+                    "Loaded config from DB - capacity: {}, FPR: {:.3}%",
+                    config.capacity,
+                    config.false_positive_rate * 100.0
+                );
+                config
+            }
+            None => {
+                return Err(BloomError::PersistenceError(
+                    "Database exists but no configuration found".to_string(),
+                ));
+            }
+        };
+
+        // Build filter with loaded config
+        let mut filter = Self::build_filter(loaded_config, Some(backend)).await?;
+
+        // Load snapshot data from DB
+        println!("TODO: Loading snapshot data from DB...");
+        // filter.load_from_storage().await?;
+
+        Ok(filter)
     }
 
     /// Creates new filter or loads existing one
@@ -130,9 +148,6 @@ impl BloomFilter {
             // No persistence, just create in-memory
             Self::create(config).await
         }
-
-        #[cfg(not(feature = "fjall"))]
-        Self::create(config).await
     }
 
     /// Internal helper to build the actual BloomFilter struct
@@ -201,11 +216,8 @@ impl BloomFilterStats for BloomFilter {
 #[async_trait]
 impl BloomFilterOps for BloomFilter {
     async fn insert(&mut self, item: &[u8]) -> BloomResult<()> {
-        let indices = (self.config.hash_function)(
-            item,
-            self.num_hashes,
-            self.bit_vector_size,
-        );
+        let indices =
+            default_hash_function(item, self.num_hashes, self.bit_vector_size);
 
         for idx in indices {
             let idx = idx as usize;
@@ -223,11 +235,8 @@ impl BloomFilterOps for BloomFilter {
     }
 
     async fn contains(&self, item: &[u8]) -> BloomResult<bool> {
-        let indices = (self.config.hash_function)(
-            item,
-            self.num_hashes,
-            self.bit_vector_size,
-        );
+        let indices =
+            default_hash_function(item, self.num_hashes, self.bit_vector_size);
 
         for idx in indices {
             let idx = idx as usize;

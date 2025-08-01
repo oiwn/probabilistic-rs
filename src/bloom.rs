@@ -7,7 +7,7 @@ pub mod traits;
 
 pub use config::{
     BloomFilterConfig, BloomFilterConfigBuilder, PersistenceConfig,
-    SnapshotConfig,
+    PersistenceConfigBuilder, SnapshotConfig,
 };
 pub use error::{BloomError, BloomResult};
 pub use filter::BloomFilter;

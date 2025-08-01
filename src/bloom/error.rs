@@ -22,6 +22,9 @@ pub enum BloomError {
     #[error("Storage backend error: {0}")]
     StorageError(String),
 
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
+
     #[cfg(feature = "fjall")]
     #[error("Fjall error: {0}")]
     FjallError(#[from] Box<fjall::Error>),
