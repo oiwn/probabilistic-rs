@@ -6,7 +6,6 @@ use crate::{
     bloom::traits::BloomFilterStats,
     hash::{default_hash_function, optimal_bit_vector_size, optimal_num_hashes},
 };
-use async_trait::async_trait;
 use bitvec::{bitvec, order::Lsb0, vec::BitVec};
 use tracing::{debug, info, warn};
 
@@ -318,9 +317,8 @@ impl BloomFilterStats for BloomFilter {
     }
 }
 
-#[async_trait]
 impl BloomFilterOps for BloomFilter {
-    async fn insert(&mut self, item: &[u8]) -> BloomResult<()> {
+    fn insert(&mut self, item: &[u8]) -> BloomResult<()> {
         let indices =
             default_hash_function(item, self.num_hashes, self.bit_vector_size);
 
@@ -339,7 +337,7 @@ impl BloomFilterOps for BloomFilter {
         Ok(())
     }
 
-    async fn contains(&self, item: &[u8]) -> BloomResult<bool> {
+    fn contains(&self, item: &[u8]) -> BloomResult<bool> {
         let indices =
             default_hash_function(item, self.num_hashes, self.bit_vector_size);
 
@@ -358,7 +356,7 @@ impl BloomFilterOps for BloomFilter {
         Ok(true)
     }
 
-    async fn clear(&mut self) -> BloomResult<()> {
+    fn clear(&mut self) -> BloomResult<()> {
         self.bits.fill(false);
         self.insert_count.store(0, Ordering::Relaxed);
         Ok(())

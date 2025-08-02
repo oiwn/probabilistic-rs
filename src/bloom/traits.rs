@@ -1,11 +1,10 @@
 use super::{BloomFilterConfig, BloomResult};
 use async_trait::async_trait;
 
-#[async_trait]
 pub trait BloomFilterOps {
-    async fn insert(&mut self, item: &[u8]) -> BloomResult<()>;
-    async fn contains(&self, item: &[u8]) -> BloomResult<bool>;
-    async fn clear(&mut self) -> BloomResult<()>;
+    fn insert(&mut self, item: &[u8]) -> BloomResult<()>;
+    fn contains(&self, item: &[u8]) -> BloomResult<bool>;
+    fn clear(&mut self) -> BloomResult<()>;
 }
 
 pub trait BloomFilterStats {
@@ -14,10 +13,9 @@ pub trait BloomFilterStats {
     fn insert_count(&self) -> usize;
 }
 
-#[async_trait]
 pub trait BulkBloomFilterOps {
-    async fn insert_bulk(&mut self, items: &[&[u8]]) -> BloomResult<()>;
-    async fn contains_bulk(&self, items: &[&[u8]]) -> BloomResult<Vec<bool>>;
+    fn insert_bulk(&mut self, items: &[&[u8]]) -> BloomResult<()>;
+    fn contains_bulk(&self, items: &[&[u8]]) -> BloomResult<Vec<bool>>;
 }
 
 #[async_trait]

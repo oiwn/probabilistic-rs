@@ -62,21 +62,21 @@ async fn basic_workflow_example() -> Result<(), Box<dyn std::error::Error>> {
     let items = vec!["apple", "banana", "cherry", "date", "elderberry"];
 
     for item in &items {
-        filter.insert(item.as_bytes()).await?;
+        filter.insert(item.as_bytes())?;
         println!("  ✅ Inserted: {}", item);
     }
 
     println!("\nQuerying items:");
     // Query the items we inserted
     for item in &items {
-        let exists = filter.contains(item.as_bytes()).await?;
+        let exists = filter.contains(item.as_bytes())?;
         println!("  {} exists: {}", item, if exists { "✅" } else { "❌" });
     }
 
     // Query items we didn't insert
     let test_items = vec!["grape", "kiwi", "mango"];
     for item in &test_items {
-        let exists = filter.contains(item.as_bytes()).await?;
+        let exists = filter.contains(item.as_bytes())?;
         println!(
             "  {} exists: {}",
             item,
@@ -108,7 +108,7 @@ async fn false_positive_rate_example() -> Result<(), Box<dyn std::error::Error>>
     let mut inserted_items = HashSet::new();
     for i in 0..500 {
         let item = format!("item_{:04}", i);
-        filter.insert(item.as_bytes()).await?;
+        filter.insert(item.as_bytes())?;
         inserted_items.insert(item);
     }
 
@@ -120,7 +120,7 @@ async fn false_positive_rate_example() -> Result<(), Box<dyn std::error::Error>>
 
     for i in 1000..1000 + test_count {
         let test_item = format!("test_{:04}", i);
-        if filter.contains(test_item.as_bytes()).await? {
+        if filter.contains(test_item.as_bytes())? {
             // Make sure this isn't actually a known item
             if !inserted_items.contains(&test_item) {
                 false_positives += 1;
@@ -182,7 +182,7 @@ async fn capacity_limits_example() -> Result<(), Box<dyn std::error::Error>> {
         // Insert items
         for i in 0..items_to_insert {
             let item = format!("load_test_{:03}", i);
-            test_filter.insert(item.as_bytes()).await?;
+            test_filter.insert(item.as_bytes())?;
         }
 
         // Measure false positive rate
@@ -190,7 +190,7 @@ async fn capacity_limits_example() -> Result<(), Box<dyn std::error::Error>> {
         let tests = 100;
         for i in 1000..(1000 + tests) {
             let test_item = format!("fp_test_{:03}", i);
-            if test_filter.contains(test_item.as_bytes()).await? {
+            if test_filter.contains(test_item.as_bytes())? {
                 fps += 1;
             }
         }
@@ -247,7 +247,7 @@ async fn persistence_example() -> Result<(), Box<dyn std::error::Error>> {
     // Insert some test data
     let test_items = ["apple", "banana", "cherry", "date", "elderberry"];
     for item in &test_items {
-        filter.insert(item.as_bytes()).await?;
+        filter.insert(item.as_bytes())?;
     }
     println!("  Inserted {} test items", test_items.len());
 
