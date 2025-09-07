@@ -31,13 +31,16 @@ impl StorageBackend for FjallBackend {
         Ok(())
     }
 
-    async fn load_config(&self) -> BloomResult<Option<BloomFilterConfig>> {
+    async fn load_config(&self) -> BloomResult<BloomFilterConfig> {
         match self.config_partition.get("bloom_config") {
+            // Config exists and was read successfully
             Ok(Some(config_bytes)) => {
                 let config = BloomFilterConfig::from_bytes(&config_bytes)?;
-                Ok(Some(config))
+                Ok(config)
             }
-            Ok(None) => Ok(None),
+            // Config key doesn't exist in storage
+            Ok(None) => Err(BloomError::ConfigNotFound),
+            // Storage/IO error occurred while trying to read
             Err(e) => Err(BloomError::StorageError(format!(
                 "Failed to load config: {e}"
             ))),
@@ -67,7 +70,7 @@ impl StorageBackend for FjallBackend {
         Ok(())
     }
 
-    async fn load_snapshot(&self) -> BloomResult<Option<Vec<(usize, Vec<u8>)>>> {
+    async fn load_snapshot(&self) -> BloomResult<Vec<(usize, Vec<u8>)>> {
         let mut chunks = Vec::new();
 
         // Get iterator (no error handling here - iter() doesn't return Result)
@@ -79,21 +82,20 @@ impl StorageBackend for FjallBackend {
             })?;
 
             // Parse chunk_id from key "chunk_123"
-            if let Some(chunk_id_str) = key.strip_prefix(b"chunk_") {
-                if let Ok(chunk_id_str) = std::str::from_utf8(chunk_id_str) {
-                    if let Ok(chunk_id) = chunk_id_str.parse::<usize>() {
-                        chunks.push((chunk_id, value.to_vec()));
-                    }
-                }
+            if let Some(chunk_id_str) = key.strip_prefix(b"chunk_")
+                && let Ok(chunk_id_str) = std::str::from_utf8(chunk_id_str)
+                && let Ok(chunk_id) = chunk_id_str.parse::<usize>()
+            {
+                chunks.push((chunk_id, value.to_vec()));
             }
         }
 
         if chunks.is_empty() {
-            Ok(None)
+            Ok(vec![])
         } else {
             // Sort chunks by ID for consistent ordering
             chunks.sort_by_key(|(id, _)| *id);
-            Ok(Some(chunks))
+            Ok(chunks)
         }
     }
 }

@@ -25,11 +25,11 @@ pub trait PersistentBloomFilter {
     fn is_dirty(&self) -> bool;
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 pub trait StorageBackend {
     async fn save_config(&self, config: &BloomFilterConfig) -> BloomResult<()>;
-    async fn load_config(&self) -> BloomResult<Option<BloomFilterConfig>>;
+    async fn load_config(&self) -> BloomResult<BloomFilterConfig>;
     async fn save_snapshot(&self, chunks: &[(usize, Vec<u8>)])
     -> BloomResult<()>;
-    async fn load_snapshot(&self) -> BloomResult<Option<Vec<(usize, Vec<u8>)>>>;
+    async fn load_snapshot(&self) -> BloomResult<Vec<(usize, Vec<u8>)>>;
 }

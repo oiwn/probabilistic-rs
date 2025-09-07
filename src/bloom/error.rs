@@ -16,14 +16,17 @@ pub enum BloomError {
     #[error("False positive rate must be between 0 and 1, got {rate}")]
     InvalidFalsePositiveRate { rate: f64 },
 
-    #[error("Persistence error: {0}")]
-    PersistenceError(String),
-
     #[error("Storage backend error: {0}")]
     StorageError(String),
 
     #[error("Serialization error: {0}")]
     SerializationError(String),
+
+    #[error("No configuration found in storage")]
+    ConfigNotFound,
+
+    #[error("No snapshot data found in storage")]
+    SnapshotNotFound,
 
     #[cfg(feature = "fjall")]
     #[error("Fjall error: {0}")]

@@ -17,30 +17,15 @@ pub struct BloomFilterConfig {
     pub persistence: Option<PersistenceConfig>,
 }
 
-#[derive(Clone, Debug, Builder, Serialize, Deserialize, Decode, Encode)]
-pub struct SnapshotConfig {
-    pub interval: Duration,
-    pub after_inserts: usize,
-    pub auto_enabled: bool,
-}
-
-impl Default for SnapshotConfig {
-    fn default() -> Self {
-        Self {
-            interval: Duration::from_secs(60),
-            after_inserts: 10000,
-            auto_enabled: true,
-        }
-    }
-}
-
 #[derive(Builder, Clone, Debug, Serialize, Deserialize, Decode, Encode)]
 pub struct PersistenceConfig {
     pub db_path: PathBuf,
-    #[builder(default)]
-    pub snapshot_config: SnapshotConfig,
-    #[builder(default = "4096")] // 4KB chunks by default
+    #[builder(default = "Duration::from_secs(60)")]
+    pub snapshot_interval: Duration,
+    #[builder(default = "4096")] // 4KB per chunks
     pub chunk_size_bytes: usize,
+    #[builder(default = "false")]
+    pub auto_snapshot: bool,
 }
 
 impl BloomFilterConfig {

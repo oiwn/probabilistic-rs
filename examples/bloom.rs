@@ -2,7 +2,7 @@
 // mod common;
 use expiring_bloom_rs::bloom::{
     BloomFilter, BloomFilterConfigBuilder, BloomFilterOps, BloomFilterStats,
-    PersistenceConfigBuilder, SnapshotConfig,
+    PersistenceConfigBuilder,
 };
 use expiring_bloom_rs::common::bits2hr;
 use std::collections::HashSet;
@@ -30,6 +30,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Demonstrate database persistence
     persistence_example().await?;
+
+    // Demonstrate bulk operations (if available)
+    bulk_operations_example().await?;
 
     Ok(())
 }
@@ -227,7 +230,6 @@ async fn persistence_example() -> Result<(), Box<dyn std::error::Error>> {
     let persistence_config = PersistenceConfigBuilder::default()
         .db_path(db_path.clone())
         .chunk_size_bytes(1024) // 1KB chunks
-        .snapshot_config(SnapshotConfig::default())
         .build()?;
 
     let original_config = BloomFilterConfigBuilder::default()
@@ -251,9 +253,9 @@ async fn persistence_example() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!("  Inserted {} test items", test_items.len());
 
-    // Save snapshot (when implemented)
+    // Save snapshot
     println!("  Saving snapshot to database...");
-    // filter.save_snapshot().await?;
+    filter.save_snapshot().await?;
 
     drop(filter); // Ensure everything is written
 
@@ -305,6 +307,13 @@ async fn persistence_example() -> Result<(), Box<dyn std::error::Error>> {
         loaded_config.false_positive_rate * 100.0
     );
 
+    // Verify that the data survived persistence
+    println!("  Verifying persisted data:");
+    for item in &test_items {
+        let exists = loaded_filter.contains(item.as_bytes())?;
+        println!("    {} exists: {}", item, if exists { "✅" } else { "❌" });
+    }
+
     // Verify parameters match
     let capacity_match = original_config.capacity == loaded_config.capacity;
     let fpr_match = (original_config.false_positive_rate
@@ -355,5 +364,92 @@ async fn persistence_example() -> Result<(), Box<dyn std::error::Error>> {
     println!("    Created new - capacity: {}", new_filter.capacity());
 
     println!("\n✅ Persistence example completed!");
+    Ok(())
+}
+
+async fn bulk_operations_example() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n⚡ Bulk Operations Example");
+    println!("-------------------------");
+
+    let config = BloomFilterConfigBuilder::default()
+        .capacity(10_000)
+        .false_positive_rate(0.01)
+        .build()?;
+
+    let mut filter = BloomFilter::create(config).await?;
+
+    // Prepare bulk data
+    let bulk_items: Vec<String> =
+        (0..100).map(|i| format!("bulk_item_{:04}", i)).collect();
+
+    let bulk_refs: Vec<&[u8]> = bulk_items.iter().map(|s| s.as_bytes()).collect();
+
+    println!("Prepared {} items for bulk operations", bulk_items.len());
+
+    // Note: Bulk operations are not yet implemented in the current core filter
+    // This is a placeholder to show what the API would look like
+    println!("📝 Note: Bulk operations (insert_bulk/contains_bulk) are planned");
+    println!("         but not yet implemented in the core BloomFilter.");
+    println!(
+        "         Current implementation falls back to individual operations:"
+    );
+
+    // Individual insertions (current implementation)
+    let start = std::time::Instant::now();
+    for item_bytes in &bulk_refs {
+        filter.insert(item_bytes)?;
+    }
+    let insert_duration = start.elapsed();
+
+    // Individual queries (current implementation)
+    let start = std::time::Instant::now();
+    let mut found_count = 0;
+    for item_bytes in &bulk_refs {
+        if filter.contains(item_bytes)? {
+            found_count += 1;
+        }
+    }
+    let query_duration = start.elapsed();
+
+    println!("Performance results (individual operations):");
+    let insert_rate = if insert_duration.as_millis() > 0 {
+        bulk_items.len() as f64 / insert_duration.as_millis() as f64
+    } else {
+        bulk_items.len() as f64 / (insert_duration.as_micros() as f64 / 1000.0)
+    };
+    let query_rate = if query_duration.as_millis() > 0 {
+        bulk_items.len() as f64 / query_duration.as_millis() as f64
+    } else {
+        bulk_items.len() as f64 / (query_duration.as_micros() as f64 / 1000.0)
+    };
+
+    println!(
+        "  Insert time: {:?} ({:.1} ops/ms)",
+        insert_duration, insert_rate
+    );
+    println!(
+        "  Query time:  {:?} ({:.1} ops/ms)",
+        query_duration, query_rate
+    );
+    println!("  Items found: {}/{}", found_count, bulk_items.len());
+
+    // Test some items that weren't inserted
+    let test_items: Vec<String> = (1000..1010)
+        .map(|i| format!("test_item_{:04}", i))
+        .collect();
+
+    let mut false_positives = 0;
+    for item in &test_items {
+        if filter.contains(item.as_bytes())? {
+            false_positives += 1;
+        }
+    }
+
+    println!(
+        "  False positives: {}/{} test items",
+        false_positives,
+        test_items.len()
+    );
+
     Ok(())
 }
