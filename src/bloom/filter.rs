@@ -6,27 +6,31 @@ use crate::{
     bloom::traits::BloomFilterStats,
     hash::{default_hash_function, optimal_bit_vector_size, optimal_num_hashes},
 };
-use async_trait::async_trait;
 use bitvec::{bitvec, order::Lsb0, vec::BitVec};
 use tracing::{debug, info, warn};
 
 use std::{
     path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 pub struct BloomFilter {
     config: BloomFilterConfig,
     pub bit_vector_size: usize,
     pub num_hashes: usize,
-    bits: BitVec<usize, Lsb0>,
     insert_count: AtomicUsize,
+
+    // Read-heavy data
+    bits: Arc<RwLock<BitVec<usize, Lsb0>>>,
+    pub(crate) dirty_chunks: Option<Arc<RwLock<BitVec<usize, Lsb0>>>>,
 
     // Persistence support
     #[cfg(feature = "fjall")]
     pub storage: Option<FjallBackend>,
     chunk_size_bytes: usize,
-    pub(crate) dirty_chunks: Option<BitVec<usize, Lsb0>>,
 }
 
 impl BloomFilter {
@@ -40,7 +44,7 @@ impl BloomFilter {
             // Create tmp directory if needed
             if let Some(parent) = persistence_config.db_path.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| {
-                    BloomError::PersistenceError(format!(
+                    BloomError::StorageError(format!(
                         "Failed to create db directory: {e}"
                     ))
                 })?;
@@ -50,7 +54,7 @@ impl BloomFilter {
             if persistence_config.db_path.exists() {
                 std::fs::remove_dir_all(&persistence_config.db_path).map_err(
                     |e| {
-                        BloomError::PersistenceError(format!(
+                        BloomError::StorageError(format!(
                             "Failed to delete existing DB: {e}"
                         ))
                     },
@@ -86,7 +90,7 @@ impl BloomFilter {
     pub async fn load(db_path: PathBuf) -> BloomResult<Self> {
         // Check if DB exists
         if !db_path.exists() {
-            return Err(BloomError::PersistenceError(format!(
+            return Err(BloomError::StorageError(format!(
                 "Database does not exist at {db_path:?}"
             )));
         }
@@ -96,33 +100,22 @@ impl BloomFilter {
         info!("Created Fjall backend for existing DB at {:?}", db_path);
 
         // Load config from DB
-        let loaded_config = match backend.load_config().await? {
-            Some(config) => {
-                info!(
-                    "Loaded config from DB - capacity: {}, FPR: {:.3}%",
-                    config.capacity,
-                    config.false_positive_rate * 100.0
-                );
-                config
-            }
-            None => {
-                return Err(BloomError::PersistenceError(
-                    "Database exists but no configuration found".to_string(),
-                ));
-            }
-        };
+        let loaded_config = backend.load_config().await?;
+        info!(
+            "Loaded config from DB - capacity: {}, FPR: {:.3}%",
+            loaded_config.capacity,
+            loaded_config.false_positive_rate * 100.0
+        );
 
         // Build filter with loaded config
         let mut filter = Self::build_filter(loaded_config, Some(backend)).await?;
 
         // Load snapshot data from DB
+
         if let Some(ref backend) = filter.storage {
-            if let Some(chunks) = backend.load_snapshot().await? {
-                filter.reconstruct_from_chunks(&chunks)?;
-                info!("Loaded {} chunks from database", chunks.len());
-            } else {
-                info!("No snapshot data found in database");
-            }
+            let chunks = backend.load_snapshot().await?;
+            filter.reconstruct_from_chunks(&chunks)?;
+            info!("Loaded {} chunks from database", chunks.len());
         }
 
         Ok(filter)
@@ -158,11 +151,10 @@ impl BloomFilter {
         config: BloomFilterConfig,
         storage: Option<FjallBackend>,
     ) -> BloomResult<Self> {
-        // Calculate bloom filter parameters
         let bit_vector_size =
             optimal_bit_vector_size(config.capacity, config.false_positive_rate);
         let num_hashes = optimal_num_hashes(config.capacity, bit_vector_size);
-        let bits = bitvec![0; bit_vector_size];
+        let bits = Arc::new(RwLock::new(bitvec![0; bit_vector_size]));
 
         // Setup chunking if persistence enabled
         let (chunk_size_bytes, dirty_chunks) = if config.persistence.is_some() {
@@ -170,7 +162,10 @@ impl BloomFilter {
                 config.persistence.as_ref().unwrap().chunk_size_bytes;
             let chunk_count =
                 (bit_vector_size + chunk_size * 8 - 1).div_ceil(chunk_size * 8);
-            (chunk_size, Some(bitvec![0; chunk_count]))
+            (
+                chunk_size,
+                Some(Arc::new(RwLock::new(bitvec![0; chunk_count]))),
+            )
         } else {
             (0, None)
         };
@@ -188,26 +183,6 @@ impl BloomFilter {
         })
     }
 
-    fn extract_all_chunks(&self) -> Vec<(usize, Vec<u8>)> {
-        let mut chunks = Vec::new();
-
-        if self.chunk_size_bytes > 0 {
-            let chunk_size_bits = self.chunk_size_bytes * 8;
-            let num_chunks = (self.bit_vector_size + chunk_size_bits - 1)
-                .div_ceil(chunk_size_bits);
-
-            for chunk_id in 0..num_chunks {
-                let chunk_data =
-                    self.extract_chunk_bytes(chunk_id, chunk_size_bits);
-                chunks.push((chunk_id, chunk_data));
-            }
-
-            debug!("Extracted {} chunks for snapshot", chunks.len());
-        }
-
-        chunks
-    }
-
     pub async fn save_snapshot(&self) -> BloomResult<()> {
         #[cfg(feature = "fjall")]
         if let Some(ref backend) = self.storage {
@@ -219,16 +194,45 @@ impl BloomFilter {
         Ok(())
     }
 
+    fn extract_all_chunks(&self) -> Vec<(usize, Vec<u8>)> {
+        let mut chunks = Vec::new();
+
+        if self.chunk_size_bytes > 0 {
+            let bits = self.bits.read().unwrap(); // Add this lock
+            let chunk_size_bits = self.chunk_size_bytes * 8;
+            let num_chunks = (self.bit_vector_size + chunk_size_bits - 1)
+                .div_ceil(chunk_size_bits);
+
+            for chunk_id in 0..num_chunks {
+                let chunk_data = self.extract_chunk_bytes_with_bits(
+                    &bits, // Pass the locked bits
+                    chunk_id,
+                    chunk_size_bits,
+                );
+                chunks.push((chunk_id, chunk_data));
+            }
+
+            debug!("Extracted {} chunks for snapshot", chunks.len());
+        }
+
+        chunks
+    }
+
     pub fn extract_dirty_chunks(&self) -> Vec<(usize, Vec<u8>)> {
         let mut chunks = Vec::new();
 
-        if let Some(ref dirty_chunks) = self.dirty_chunks {
+        if let Some(ref dirty_chunks_arc) = self.dirty_chunks {
+            let dirty_chunks = dirty_chunks_arc.read().unwrap();
+            let bits = self.bits.read().unwrap();
             let chunk_size_bits = self.chunk_size_bytes * 8;
 
             for chunk_id in 0..dirty_chunks.len() {
                 if dirty_chunks[chunk_id] {
-                    let chunk_data =
-                        self.extract_chunk_bytes(chunk_id, chunk_size_bits);
+                    let chunk_data = self.extract_chunk_bytes_with_bits(
+                        &bits,
+                        chunk_id,
+                        chunk_size_bits,
+                    );
                     chunks.push((chunk_id, chunk_data));
                 }
             }
@@ -238,7 +242,37 @@ impl BloomFilter {
         chunks
     }
 
-    fn extract_chunk_bytes(
+    fn extract_chunk_bytes_with_bits(
+        &self,
+        bits: &BitVec<usize, Lsb0>,
+        chunk_id: usize,
+        chunk_size_bits: usize,
+    ) -> Vec<u8> {
+        let start_bit = chunk_id * chunk_size_bits;
+
+        // Safety check: if start_bit >= bits.len(), return empty chunk
+        if start_bit >= bits.len() {
+            return Vec::new();
+        }
+
+        let end_bit = std::cmp::min(start_bit + chunk_size_bits, bits.len());
+        let chunk_bits = &bits[start_bit..end_bit];
+        let mut bytes = Vec::new();
+
+        for byte_chunk in chunk_bits.chunks(8) {
+            let mut byte = 0u8;
+            for (bit_pos, bit) in byte_chunk.iter().enumerate() {
+                if *bit {
+                    byte |= 1 << bit_pos;
+                }
+            }
+            bytes.push(byte);
+        }
+
+        bytes
+    }
+
+    /* fn extract_chunk_bytes(
         &self,
         chunk_id: usize,
         chunk_size_bits: usize,
@@ -262,7 +296,7 @@ impl BloomFilter {
         }
 
         bytes
-    }
+    } */
 
     fn reconstruct_from_chunks(
         &mut self,
@@ -270,16 +304,19 @@ impl BloomFilter {
     ) -> BloomResult<()> {
         let chunk_size_bits = self.chunk_size_bytes * 8;
 
+        // Get write lock for the entire reconstruction
+        let mut bits = self.bits.write().unwrap();
+
         for (chunk_id, chunk_bytes) in chunks {
             let start_bit = chunk_id * chunk_size_bits;
 
-            // Unpack bytes back to bits
             for (byte_idx, &byte) in chunk_bytes.iter().enumerate() {
                 for bit_pos in 0..8 {
                     let bit_idx = start_bit + byte_idx * 8 + bit_pos;
-                    if bit_idx < self.bits.len() {
+                    if bit_idx < bits.len() {
+                        // Use bits instead of self.bits
                         let bit_value = (byte & (1 << bit_pos)) != 0;
-                        self.bits.set(bit_idx, bit_value);
+                        bits.set(bit_idx, bit_value); // Use bits instead of self.bits
                     }
                 }
             }
@@ -294,7 +331,8 @@ impl BloomFilter {
     }
 
     pub fn approx_memory_bits(&self) -> usize {
-        let words = self.bits.as_raw_slice(); // &[usize]
+        let binding = self.bits.read().unwrap();
+        let words = binding.as_raw_slice(); // &[usize]
         // words.len() * std::mem::size_of::<usize>()
         std::mem::size_of_val(words)
     }
@@ -318,11 +356,13 @@ impl BloomFilterStats for BloomFilter {
     }
 }
 
-#[async_trait]
 impl BloomFilterOps for BloomFilter {
-    async fn insert(&mut self, item: &[u8]) -> BloomResult<()> {
+    fn insert(&mut self, item: &[u8]) -> BloomResult<()> {
         let indices =
             default_hash_function(item, self.num_hashes, self.bit_vector_size);
+
+        // Get write locks
+        let mut bits = self.bits.write().unwrap();
 
         for idx in indices {
             let idx = idx as usize;
@@ -332,16 +372,27 @@ impl BloomFilterOps for BloomFilter {
                     capacity: self.bit_vector_size,
                 });
             }
-            self.bits.set(idx, true);
+
+            // Mark chunk as dirty when setting bits
+            if let Some(ref dirty_chunks_arc) = self.dirty_chunks {
+                let mut dirty_chunks = dirty_chunks_arc.write().unwrap();
+                let chunk_id = idx / (self.chunk_size_bytes * 8);
+                if chunk_id < dirty_chunks.len() {
+                    dirty_chunks.set(chunk_id, true);
+                }
+            }
+
+            bits.set(idx, true);
         }
 
         self.insert_count.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
-    async fn contains(&self, item: &[u8]) -> BloomResult<bool> {
+    fn contains(&self, item: &[u8]) -> BloomResult<bool> {
         let indices =
             default_hash_function(item, self.num_hashes, self.bit_vector_size);
+        let bits = self.bits.read().unwrap();
 
         for idx in indices {
             let idx = idx as usize;
@@ -351,15 +402,16 @@ impl BloomFilterOps for BloomFilter {
                     capacity: self.bit_vector_size,
                 });
             }
-            if !self.bits[idx] {
+            if !bits[idx] {
                 return Ok(false);
             }
         }
         Ok(true)
     }
 
-    async fn clear(&mut self) -> BloomResult<()> {
-        self.bits.fill(false);
+    fn clear(&mut self) -> BloomResult<()> {
+        let mut bits = self.bits.write().unwrap();
+        bits.fill(false);
         self.insert_count.store(0, Ordering::Relaxed);
         Ok(())
     }

@@ -7,12 +7,12 @@ windows:
     panes:
       - shell_command:
         - helix
-  - window_name: cmd1
+  - window_name: agent
     start-directory: ./
     panes:
       - shell_command:
-        - clear
-  - window_name: cmd2
+        - claude
+  - window_name: cmd1
     start-directory: ./
     panes:
       - shell_command:
