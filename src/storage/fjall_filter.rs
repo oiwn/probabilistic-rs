@@ -258,15 +258,13 @@ impl FjallFilter {
                         "Failed to read timestamp: {e}"
                     ))
                 })?
-            {
-                if let Ok((duration, _)) = bincode::decode_from_slice::<Duration, _>(
+                && let Ok((duration, _)) = bincode::decode_from_slice::<Duration, _>(
                     &ts_bytes,
                     bincode::config::standard(),
                 ) {
                     self.storage.timestamps[level] =
                         SystemTime::UNIX_EPOCH + duration;
                 }
-            }
         }
 
         Ok(())

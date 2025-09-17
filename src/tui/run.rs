@@ -16,8 +16,8 @@ pub fn run_app<B: Backend>(
     loop {
         terminal.draw(|f| ui(f, &app))?;
 
-        if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
+        if event::poll(Duration::from_millis(100))?
+            && let Event::Key(key) = event::read()? {
                 match app.input_mode {
                     InputMode::Normal => match key.code {
                         KeyCode::Char('i') => {
@@ -190,6 +190,5 @@ pub fn run_app<B: Backend>(
                     }
                 }
             }
-        }
     }
 }

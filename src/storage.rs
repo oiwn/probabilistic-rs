@@ -177,14 +177,13 @@ impl FilterStorage for InMemoryStorage {
         );
 
         // Check all indices first
-        if let Some(&max_index) = indices.iter().max() {
-            if max_index >= self.capacity {
+        if let Some(&max_index) = indices.iter().max()
+            && max_index >= self.capacity {
                 return Err(FilterError::IndexOutOfBounds {
                     index: max_index,
                     capacity: self.capacity,
                 });
             }
-        }
 
         // Get all bits in one go
         Ok(indices

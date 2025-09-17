@@ -122,15 +122,14 @@ impl ExpiringBloomFilter for InMemoryFilter {
     fn cleanup_expired_levels(&mut self) -> Result<()> {
         let now = SystemTime::now();
         for level in 0..self.config.max_levels {
-            if let Some(timestamp) = self.storage.get_timestamp(level)? {
-                if now
+            if let Some(timestamp) = self.storage.get_timestamp(level)?
+                && now
                     .duration_since(timestamp)
                     .map_err(|e| FilterError::StorageError(e.to_string()))?
                     >= self.config.level_duration * self.config.max_levels as u32
                 {
                     self.storage.clear_level(level)?;
                 }
-            }
         }
         Ok(())
     }
