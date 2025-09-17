@@ -228,24 +228,23 @@ impl RedbFilter {
         if let Ok(bits_table) = read_txn.open_table(BITS_TABLE) {
             for level in 0..self.config.max_levels {
                 let level_u8 = level as u8;
-                if let Ok(Some(bits)) = bits_table.get(&level_u8) {
-                    if let Ok(bit_vec) =
+                if let Ok(Some(bits)) = bits_table.get(&level_u8)
+                    && let Ok(bit_vec) =
                         self.storage.bytes_to_bitvec(bits.value())
-                    {
-                        self.storage.levels[level] = bit_vec;
-                    }
-
-                    // let bit_vec: Vec<bool> =
-                    //     bits.value().iter().map(|&byte| byte != 0).collect();
-                    // if bit_vec.len() == bit_vector_size {
-                    //     let mut bit_vec_new =
-                    //         bitvec![usize, Lsb0; 0; bit_vector_size];
-                    //     for (i, &val) in bit_vec.iter().enumerate() {
-                    //         bit_vec_new.set(i, val);
-                    //     }
-                    //     self.storage.levels[level] = bit_vec_new;
-                    // }
+                {
+                    self.storage.levels[level] = bit_vec;
                 }
+
+                // let bit_vec: Vec<bool> =
+                //     bits.value().iter().map(|&byte| byte != 0).collect();
+                // if bit_vec.len() == bit_vector_size {
+                //     let mut bit_vec_new =
+                //         bitvec![usize, Lsb0; 0; bit_vector_size];
+                //     for (i, &val) in bit_vec.iter().enumerate() {
+                //         bit_vec_new.set(i, val);
+                //     }
+                //     self.storage.levels[level] = bit_vec_new;
+                // }
             }
         }
 
@@ -253,16 +252,15 @@ impl RedbFilter {
         if let Ok(timestamps_table) = read_txn.open_table(TIMESTAMPS_TABLE) {
             for level in 0..self.config.max_levels {
                 let level_u8 = level as u8;
-                if let Ok(Some(ts_bytes)) = timestamps_table.get(&level_u8) {
-                    if let Ok((duration, _)) =
+                if let Ok(Some(ts_bytes)) = timestamps_table.get(&level_u8)
+                    && let Ok((duration, _)) =
                         bincode::decode_from_slice::<Duration, _>(
                             ts_bytes.value(),
                             bincode::config::standard(),
                         )
-                    {
-                        self.storage.timestamps[level] =
-                            SystemTime::UNIX_EPOCH + duration;
-                    }
+                {
+                    self.storage.timestamps[level] =
+                        SystemTime::UNIX_EPOCH + duration;
                 }
             }
         }
@@ -425,10 +423,10 @@ impl Drop for RedbFilter {
         // TODO: here will need to shutdown parallel thread
 
         // Take final snapshot on drop if dirty
-        if self.dirty.load(Ordering::Relaxed) {
-            if let Err(err) = self.save_snapshot() {
-                error!("Error saving snapshot: {}", err);
-            }
+        if self.dirty.load(Ordering::Relaxed)
+            && let Err(err) = self.save_snapshot()
+        {
+            error!("Error saving snapshot: {}", err);
         }
     }
 }
