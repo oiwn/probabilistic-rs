@@ -261,10 +261,11 @@ impl FjallFilter {
                 && let Ok((duration, _)) = bincode::decode_from_slice::<Duration, _>(
                     &ts_bytes,
                     bincode::config::standard(),
-                ) {
-                    self.storage.timestamps[level] =
-                        SystemTime::UNIX_EPOCH + duration;
-                }
+                )
+            {
+                self.storage.timestamps[level] =
+                    SystemTime::UNIX_EPOCH + duration;
+            }
         }
 
         Ok(())

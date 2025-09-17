@@ -231,20 +231,20 @@ impl RedbFilter {
                 if let Ok(Some(bits)) = bits_table.get(&level_u8)
                     && let Ok(bit_vec) =
                         self.storage.bytes_to_bitvec(bits.value())
-                    {
-                        self.storage.levels[level] = bit_vec;
-                    }
+                {
+                    self.storage.levels[level] = bit_vec;
+                }
 
-                    // let bit_vec: Vec<bool> =
-                    //     bits.value().iter().map(|&byte| byte != 0).collect();
-                    // if bit_vec.len() == bit_vector_size {
-                    //     let mut bit_vec_new =
-                    //         bitvec![usize, Lsb0; 0; bit_vector_size];
-                    //     for (i, &val) in bit_vec.iter().enumerate() {
-                    //         bit_vec_new.set(i, val);
-                    //     }
-                    //     self.storage.levels[level] = bit_vec_new;
-                    // }
+                // let bit_vec: Vec<bool> =
+                //     bits.value().iter().map(|&byte| byte != 0).collect();
+                // if bit_vec.len() == bit_vector_size {
+                //     let mut bit_vec_new =
+                //         bitvec![usize, Lsb0; 0; bit_vector_size];
+                //     for (i, &val) in bit_vec.iter().enumerate() {
+                //         bit_vec_new.set(i, val);
+                //     }
+                //     self.storage.levels[level] = bit_vec_new;
+                // }
             }
         }
 
@@ -258,10 +258,10 @@ impl RedbFilter {
                             ts_bytes.value(),
                             bincode::config::standard(),
                         )
-                    {
-                        self.storage.timestamps[level] =
-                            SystemTime::UNIX_EPOCH + duration;
-                    }
+                {
+                    self.storage.timestamps[level] =
+                        SystemTime::UNIX_EPOCH + duration;
+                }
             }
         }
 
@@ -424,8 +424,9 @@ impl Drop for RedbFilter {
 
         // Take final snapshot on drop if dirty
         if self.dirty.load(Ordering::Relaxed)
-            && let Err(err) = self.save_snapshot() {
-                error!("Error saving snapshot: {}", err);
-            }
+            && let Err(err) = self.save_snapshot()
+        {
+            error!("Error saving snapshot: {}", err);
+        }
     }
 }

@@ -127,9 +127,9 @@ impl ExpiringBloomFilter for InMemoryFilter {
                     .duration_since(timestamp)
                     .map_err(|e| FilterError::StorageError(e.to_string()))?
                     >= self.config.level_duration * self.config.max_levels as u32
-                {
-                    self.storage.clear_level(level)?;
-                }
+            {
+                self.storage.clear_level(level)?;
+            }
         }
         Ok(())
     }
