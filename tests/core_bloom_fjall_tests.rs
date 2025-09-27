@@ -4,7 +4,7 @@ mod tests {
         BloomFilter, BloomFilterConfig, BloomFilterConfigBuilder, BloomFilterOps,
         BloomFilterStats, PersistenceConfigBuilder,
     };
-    use std::{fs, path::PathBuf, time::Duration};
+    use std::{fs, path::PathBuf, sync::Arc, thread, time::Duration};
 
     struct TestDb {
         path: PathBuf,
@@ -59,7 +59,7 @@ mod tests {
 
         // Create new filter and insert data
         {
-            let mut filter = BloomFilter::create(config.clone()).await.unwrap();
+            let filter = BloomFilter::create(config.clone()).await.unwrap();
 
             // Insert test data
             filter.insert(b"test_item_1").unwrap();
@@ -101,7 +101,7 @@ mod tests {
         assert!(!test_db.path.exists());
 
         // create_or_load should create new DB
-        let mut filter = BloomFilter::create_or_load(config).await.unwrap();
+        let filter = BloomFilter::create_or_load(config).await.unwrap();
         filter.insert(b"new_item").unwrap();
         assert!(filter.contains(b"new_item").unwrap());
 
@@ -116,7 +116,7 @@ mod tests {
 
         // First create a DB with some data
         {
-            let mut filter = BloomFilter::create(config.clone()).await.unwrap();
+            let filter = BloomFilter::create(config.clone()).await.unwrap();
             filter.insert(b"existing_item").unwrap();
             filter.save_snapshot().await.unwrap();
         }
@@ -136,7 +136,7 @@ mod tests {
 
         // Create filter and insert many items to test chunking
         {
-            let mut filter = BloomFilter::create(config).await.unwrap();
+            let filter = BloomFilter::create(config).await.unwrap();
 
             for item in &test_items {
                 filter.insert(item.as_bytes()).unwrap();
@@ -177,7 +177,7 @@ mod tests {
 
         // Multiple save/load cycles
         for cycle in 0..3 {
-            let mut filter = if cycle == 0 {
+            let filter = if cycle == 0 {
                 BloomFilter::create(config.clone()).await.unwrap()
             } else {
                 BloomFilter::load(test_db.path.clone()).await.unwrap()
@@ -275,7 +275,7 @@ mod tests {
 
         // Insert and save large items
         {
-            let mut filter = BloomFilter::create(config).await.unwrap();
+            let filter = BloomFilter::create(config).await.unwrap();
 
             for item in &large_items {
                 filter.insert(item).unwrap();
@@ -342,7 +342,7 @@ mod tests {
         let config = create_test_config(test_db.path.clone());
 
         // Create filter and insert items sequentially (simplified test)
-        let mut filter = BloomFilter::create(config).await.unwrap();
+        let filter = BloomFilter::create(config).await.unwrap();
 
         // Insert items
         filter.insert(b"concurrent_item_1").unwrap();
@@ -357,6 +357,85 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_arc_shared_concurrent_read_write() {
+        const WRITER_THREADS: usize = 4;
+        const ITEMS_PER_WRITER: usize = 50;
+        const READER_THREADS: usize = 3;
+
+        let test_db = TestDb::new("arc_concurrent_rw");
+        let config = create_test_config(test_db.path.clone());
+        let filter = Arc::new(BloomFilter::create(config).await.unwrap());
+
+        // Spawn writers that concurrently insert disjoint items.
+        let mut writer_handles = Vec::new();
+        for writer_id in 0..WRITER_THREADS {
+            let filter_clone = Arc::clone(&filter);
+            writer_handles.push(thread::spawn(move || {
+                for item_idx in 0..ITEMS_PER_WRITER {
+                    let item = format!("writer_{writer_id}_item_{item_idx}");
+                    filter_clone.insert(item.as_bytes()).unwrap();
+                }
+            }));
+        }
+
+        for handle in writer_handles {
+            handle.join().expect("writer thread should finish");
+        }
+
+        // Prepare the full set of items each reader will validate.
+        let all_items: Vec<Vec<u8>> = (0..WRITER_THREADS)
+            .flat_map(|writer_id| {
+                (0..ITEMS_PER_WRITER).map(move |item_idx| {
+                    format!("writer_{writer_id}_item_{item_idx}").into_bytes()
+                })
+            })
+            .collect();
+
+        let mut reader_handles = Vec::new();
+        for reader_id in 0..READER_THREADS {
+            let filter_clone = Arc::clone(&filter);
+            let chunk: Vec<Vec<u8>> = all_items
+                .iter()
+                .enumerate()
+                .filter(|(idx, _)| idx % READER_THREADS == reader_id)
+                .map(|(_, item)| item.clone())
+                .collect();
+
+            reader_handles.push(thread::spawn(move || {
+                for item in chunk {
+                    assert!(
+                        filter_clone.contains(&item).unwrap(),
+                        "reader observed missing item"
+                    );
+                }
+            }));
+        }
+
+        for handle in reader_handles {
+            handle.join().expect("reader thread should finish");
+        }
+
+        assert_eq!(
+            filter.insert_count(),
+            WRITER_THREADS * ITEMS_PER_WRITER,
+            "all concurrent inserts should be tracked"
+        );
+
+        // Ensure persistence still works after concurrent activity.
+        filter.save_snapshot().await.unwrap();
+
+        // Drop the Arc to release backend handles before reloading.
+        drop(filter);
+
+        // Reload and confirm one of the items persists.
+        let reloaded = BloomFilter::load(test_db.path.clone()).await.unwrap();
+        assert!(
+            reloaded.contains(b"writer_0_item_0").unwrap(),
+            "item should persist after reload"
+        );
+    }
+
+    #[tokio::test]
     async fn test_in_memory_vs_persistent_behavior() {
         // Test that persistent and in-memory filters behave identically
         let test_db = TestDb::new("behavior_comparison");
@@ -366,14 +445,14 @@ mod tests {
         let test_items: Vec<&[u8]> = vec![b"item1", b"item2", b"item3", b"item4"];
 
         // Test persistent filter
-        let mut persistent_filter =
+        let persistent_filter =
             BloomFilter::create(persistent_config).await.unwrap();
         for &item in &test_items {
             persistent_filter.insert(item).unwrap();
         }
 
         // Test in-memory filter
-        let mut memory_filter = BloomFilter::create(memory_config).await.unwrap();
+        let memory_filter = BloomFilter::create(memory_config).await.unwrap();
         for &item in &test_items {
             memory_filter.insert(item).unwrap();
         }
@@ -405,7 +484,7 @@ mod tests {
 
         // Create filter, add items, clear, add different items
         {
-            let mut filter = BloomFilter::create(config).await.unwrap();
+            let filter = BloomFilter::create(config).await.unwrap();
 
             filter.insert(b"item1").unwrap();
             filter.insert(b"item2").unwrap();

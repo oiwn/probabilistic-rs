@@ -47,7 +47,7 @@ async fn basic_workflow_example() -> Result<(), Box<dyn std::error::Error>> {
         .false_positive_rate(0.01) // 1%
         .build()?;
 
-    let mut filter = BloomFilter::create(config).await?;
+    let filter = BloomFilter::create(config).await?;
 
     println!("Created bloom filter:");
     println!("  Capacity: {}", filter.capacity());
@@ -105,7 +105,7 @@ async fn false_positive_rate_example() -> Result<(), Box<dyn std::error::Error>>
         .false_positive_rate(0.05) // 5%
         .build()?;
 
-    let mut filter = BloomFilter::create(config).await?;
+    let filter = BloomFilter::create(config).await?;
 
     // Insert 500 known items (50% capacity)
     let mut inserted_items = HashSet::new();
@@ -172,7 +172,7 @@ async fn capacity_limits_example() -> Result<(), Box<dyn std::error::Error>> {
 
     // Insert items up to and beyond capacity
     for fill_percentage in [25, 50, 75, 100, 150, 200] {
-        let mut test_filter = BloomFilter::create(
+        let test_filter = BloomFilter::create(
             BloomFilterConfigBuilder::default()
                 .capacity(100)
                 .false_positive_rate(0.01)
@@ -244,7 +244,7 @@ async fn persistence_example() -> Result<(), Box<dyn std::error::Error>> {
         original_config.false_positive_rate * 100.0
     );
 
-    let mut filter = BloomFilter::create(original_config.clone()).await?;
+    let filter = BloomFilter::create(original_config.clone()).await?;
 
     // Insert some test data
     let test_items = ["apple", "banana", "cherry", "date", "elderberry"];
@@ -376,7 +376,7 @@ async fn bulk_operations_example() -> Result<(), Box<dyn std::error::Error>> {
         .false_positive_rate(0.01)
         .build()?;
 
-    let mut filter = BloomFilter::create(config).await?;
+    let filter = BloomFilter::create(config).await?;
 
     // Prepare bulk data
     let bulk_items: Vec<String> =

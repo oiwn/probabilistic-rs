@@ -357,7 +357,7 @@ impl BloomFilterStats for BloomFilter {
 }
 
 impl BloomFilterOps for BloomFilter {
-    fn insert(&mut self, item: &[u8]) -> BloomResult<()> {
+    fn insert(&self, item: &[u8]) -> BloomResult<()> {
         let indices =
             default_hash_function(item, self.num_hashes, self.bit_vector_size);
 
@@ -409,7 +409,7 @@ impl BloomFilterOps for BloomFilter {
         Ok(true)
     }
 
-    fn clear(&mut self) -> BloomResult<()> {
+    fn clear(&self) -> BloomResult<()> {
         let mut bits = self.bits.write().unwrap();
         bits.fill(false);
         self.insert_count.store(0, Ordering::Relaxed);
