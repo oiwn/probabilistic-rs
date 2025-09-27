@@ -87,6 +87,10 @@ name = "bloom_benchmarks"
 harness = false
 
 [[bench]]
+name = "bloom_fjall_benchmarks"
+harness = false
+
+[[bench]]
 name = "redb_snapshot_benchmarks"
 harness = false
 
