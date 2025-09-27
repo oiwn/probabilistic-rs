@@ -36,7 +36,7 @@ mod basic_operations_tests {
 
     #[test]
     fn test_insert_and_contains() {
-        let mut filter = create_test_filter(1000, 0.01);
+        let filter = create_test_filter(1000, 0.01);
 
         // Test single item
         let item = b"hello_world";
@@ -56,7 +56,7 @@ mod basic_operations_tests {
 
     #[test]
     fn test_multiple_insertions() {
-        let mut filter = create_test_filter(1000, 0.01);
+        let filter = create_test_filter(1000, 0.01);
         let test_items = generate_test_items(10);
 
         // Insert all items
@@ -83,7 +83,7 @@ mod basic_operations_tests {
 
     #[test]
     fn test_clear_functionality() {
-        let mut filter = create_test_filter(1000, 0.01);
+        let filter = create_test_filter(1000, 0.01);
         let test_items = generate_test_items(5);
 
         // Insert items
@@ -145,7 +145,7 @@ mod basic_operations_tests {
 
     #[test]
     fn test_duplicate_insertions() {
-        let mut filter = create_test_filter(1000, 0.01);
+        let filter = create_test_filter(1000, 0.01);
         let item = b"duplicate_item";
 
         // Insert same item multiple times
@@ -284,15 +284,10 @@ mod configuration_and_stats_tests {
             assert_eq!(filter.false_positive_rate(), fpr);
 
             // Verify filter works with this configuration
-            let mut mutable_filter = filter;
-            mutable_filter
+            filter
                 .insert(b"test")
                 .expect("Insert should work with any valid config");
-            assert!(
-                mutable_filter
-                    .contains(b"test")
-                    .expect("Contains should work")
-            );
+            assert!(filter.contains(b"test").expect("Contains should work"));
         }
     }
 }
@@ -303,7 +298,7 @@ mod edge_cases_and_error_conditions {
 
     #[test]
     fn test_empty_item_insertion() {
-        let mut filter = create_test_filter(1000, 0.01);
+        let filter = create_test_filter(1000, 0.01);
 
         // Insert empty byte slice
         let empty_item = b"";
@@ -322,7 +317,7 @@ mod edge_cases_and_error_conditions {
 
     #[test]
     fn test_large_item_insertion() {
-        let mut filter = create_test_filter(1000, 0.01);
+        let filter = create_test_filter(1000, 0.01);
 
         // Create large item (1MB)
         let large_item = vec![42u8; 1024 * 1024];
@@ -342,7 +337,7 @@ mod edge_cases_and_error_conditions {
     #[test]
     fn test_capacity_stress_test() {
         let capacity = 100;
-        let mut filter = create_test_filter(capacity, 0.1);
+        let filter = create_test_filter(capacity, 0.1);
 
         // Insert more items than capacity
         let test_items = generate_test_items(capacity * 2);
@@ -378,7 +373,7 @@ mod edge_cases_and_error_conditions {
 
     #[test]
     fn test_binary_data_handling() {
-        let mut filter = create_test_filter(1000, 0.01);
+        let filter = create_test_filter(1000, 0.01);
 
         // Test various binary data patterns
         let binary_items = vec![
@@ -405,7 +400,7 @@ mod behavioral_guarantees_tests {
 
     #[test]
     fn test_no_false_negatives_guarantee() {
-        let mut filter = create_test_filter(1000, 0.01);
+        let filter = create_test_filter(1000, 0.01);
         let test_items = generate_test_items(100);
 
         // Insert all items
@@ -428,7 +423,7 @@ mod behavioral_guarantees_tests {
     fn test_false_positive_rate_measurement() {
         let capacity = 1000;
         let target_fpr = 0.05; // 5% target FPR
-        let mut filter = create_test_filter(capacity, target_fpr);
+        let filter = create_test_filter(capacity, target_fpr);
 
         // Insert items up to about 50% of capacity
         let inserted_items = generate_test_items(capacity / 2);
@@ -478,8 +473,8 @@ mod behavioral_guarantees_tests {
         let fpr = 0.01;
 
         // Create two identical filters
-        let mut filter1 = create_test_filter(capacity, fpr);
-        let mut filter2 = create_test_filter(capacity, fpr);
+        let filter1 = create_test_filter(capacity, fpr);
+        let filter2 = create_test_filter(capacity, fpr);
 
         let test_items = generate_test_items(10);
 
@@ -512,7 +507,7 @@ mod thread_safety_tests {
 
     #[test]
     fn test_concurrent_reads() {
-        let mut filter = create_test_filter(10_000, 0.01);
+        let filter = create_test_filter(10_000, 0.01);
         let test_items = generate_test_items(100);
 
         // Insert test items
@@ -566,7 +561,7 @@ mod thread_safety_tests {
         let writer_handle = thread::spawn(move || {
             for item in writer_items {
                 thread::sleep(Duration::from_millis(1)); // Small delay to interleave operations
-                let mut filter_guard =
+                let filter_guard =
                     writer_filter.lock().expect("Writer should acquire lock");
                 filter_guard.insert(&item).expect("Insert should succeed");
             }
@@ -635,7 +630,7 @@ mod integration_tests {
     #[test]
     fn test_realistic_usage_scenario() {
         // Simulate a realistic caching scenario
-        let mut filter = create_test_filter(100_000, 0.01);
+        let filter = create_test_filter(100_000, 0.01);
 
         // Phase 1: Bulk insertion of cache keys
         let cache_keys: Vec<Vec<u8>> = (0..10_000)
