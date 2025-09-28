@@ -13,8 +13,6 @@ use std::{sync::RwLock, time::SystemTime};
 #[cfg(feature = "fjall")]
 pub mod fjall_filter;
 pub mod inmemory_filter;
-#[cfg(feature = "redb")]
-pub mod redb_filter;
 
 // Trait for the storage backend
 pub trait FilterStorage {

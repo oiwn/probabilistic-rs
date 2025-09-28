@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use expiring_bloom_rs::{
-    ExpiringBloomFilter, FilterConfigBuilder, RedbFilter,
-    RedbFilterConfigBuilder, optimal_bit_vector_size, optimal_num_hashes,
+    ExpiringBloomFilter, FilterConfigBuilder, FjallFilter,
+    FjallFilterConfigBuilder, optimal_bit_vector_size, optimal_num_hashes,
     tui::{App, AppMessage, InputMode, MessageType, run_app},
 };
 use ratatui::{
@@ -132,15 +132,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build()
                 .expect("Failed to build filter config");
 
-            // Create the RedbFilterConfig
-            let redb_config = RedbFilterConfigBuilder::default()
+            // Create the FjallFilterConfig
+            let fjall_config = FjallFilterConfigBuilder::default()
                 .db_path(db_path.clone())
                 .filter_config(Some(config))
                 .snapshot_interval(Duration::from_secs(60))
                 .build()
-                .expect("Failed to build RedbFilterConfig");
+                .expect("Failed to build FjallFilterConfig");
 
-            let _filter = RedbFilter::new(redb_config)?;
+            let _filter = FjallFilter::new(fjall_config)?;
 
             println!(
                 "Created new Bloom filter database at {}",
@@ -170,15 +170,15 @@ fn handle_load_command(
     db_path: PathBuf,
     operation: &LoadCommands,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Create RedbFilterConfig for an existing database
-    let redb_config = RedbFilterConfigBuilder::default()
+    // Create FjallFilterConfig for an existing database
+    let fjall_config = FjallFilterConfigBuilder::default()
         .db_path(db_path.clone())
         .snapshot_interval(Duration::from_secs(60))
         .build()
-        .expect("Failed to build RedbFilterConfig");
+        .expect("Failed to build FjallFilterConfig");
 
     // Create the filter
-    let mut filter = RedbFilter::new(redb_config)?;
+    let mut filter = FjallFilter::new(fjall_config)?;
 
     match operation {
         LoadCommands::Insert { element } => {
@@ -262,15 +262,15 @@ pub fn run_tui(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Create the RedbFilterConfig
-    let redb_config = RedbFilterConfigBuilder::default()
+    // Create the FjallFilterConfig
+    let fjall_config = FjallFilterConfigBuilder::default()
         .db_path(db_path.to_path_buf())
         .snapshot_interval(Duration::from_secs(60))
         .build()
-        .expect("Failed to build RedbFilterConfig");
+        .expect("Failed to build FjallFilterConfig");
 
     // Create app state
-    let filter = RedbFilter::new(redb_config)?;
+    let filter = FjallFilter::new(fjall_config)?;
 
     let app = App {
         filter,

@@ -241,93 +241,11 @@ fn bench_fjall_multi_level_snapshots(c: &mut Criterion) {
     group.finish();
 }
 
-// Compare fjall vs redb
-fn bench_backend_comparison(c: &mut Criterion) {
-    let mut group = c.benchmark_group("fjall_backend_comparison");
-    group.sample_size(10);
-
-    let capacity = 10_000;
-    let test_data = generate_test_data(capacity);
-
-    // Benchmark Fjall
-    let fjall_path = temp_db_path("backend_comparison_fjall");
-    group.bench_with_input(
-        BenchmarkId::new("fjall", capacity),
-        &(capacity, &test_data, fjall_path.clone()),
-        |b, (cap, data, path)| {
-            b.iter_with_setup(
-                || {
-                    let mut filter = create_test_filter(path.clone(), *cap);
-                    for item in data.iter() {
-                        let _ = filter.insert(item.as_bytes());
-                    }
-                    filter
-                },
-                |filter| {
-                    let _ = filter.save_snapshot();
-                },
-            )
-        },
-    );
-    cleanup_db(&fjall_path);
-
-    // Benchmark ReDB if available
-    #[cfg(feature = "redb")]
-    {
-        use expiring_bloom_rs::{RedbFilter, RedbFilterConfigBuilder};
-
-        let redb_path = PathBuf::from(format!(
-            "backend_comparison_redb_{}.redb",
-            rand::random::<u64>()
-        ));
-
-        group.bench_with_input(
-            BenchmarkId::new("redb", capacity),
-            &(capacity, &test_data, redb_path.clone()),
-            |b, (cap, data, path)| {
-                b.iter_with_setup(
-                    || {
-                        let config = FilterConfigBuilder::default()
-                            .capacity(*cap)
-                            .false_positive_rate(0.01)
-                            .level_duration(Duration::from_secs(1))
-                            .max_levels(5)
-                            .build()
-                            .expect("Failed to create config");
-
-                        let redb_config = RedbFilterConfigBuilder::default()
-                            .db_path(path.clone())
-                            .filter_config(Some(config))
-                            .snapshot_interval(Duration::from_secs(60))
-                            .build()
-                            .expect("Failed to build RedbFilterConfig");
-
-                        let mut filter = RedbFilter::new(redb_config)
-                            .expect("Failed to create RedbFilter");
-
-                        for item in data.iter() {
-                            let _ = filter.insert(item.as_bytes());
-                        }
-                        filter
-                    },
-                    |filter| {
-                        let _ = filter.save_snapshot();
-                    },
-                )
-            },
-        );
-        let _ = fs::remove_file(&redb_path);
-    }
-
-    group.finish();
-}
-
 criterion_group!(
     benches,
     bench_tricky_issue,
     bench_fjall_snapshots,
     bench_fjall_snapshot_fill_levels,
-    bench_fjall_multi_level_snapshots,
-    bench_backend_comparison
+    bench_fjall_multi_level_snapshots
 );
 criterion_main!(benches);

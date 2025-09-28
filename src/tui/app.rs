@@ -1,4 +1,4 @@
-use crate::RedbFilter;
+use crate::FjallFilter;
 
 pub enum InputMode {
     Normal,
@@ -18,7 +18,7 @@ pub struct AppMessage {
 }
 
 pub struct App {
-    pub filter: RedbFilter,
+    pub filter: FjallFilter,
     pub input: String,
     pub messages: Vec<AppMessage>,
     pub input_mode: InputMode,

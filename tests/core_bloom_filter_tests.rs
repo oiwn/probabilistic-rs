@@ -257,7 +257,7 @@ mod configuration_and_stats_tests {
         // Bits per item should be reasonable (theoretical minimum for 1% FPR is ~9.6 bits)
         // Note: Due to how memory is allocated in chunks, actual may be lower
         assert!(
-            bits_per_item >= 1.0 && bits_per_item <= 50.0,
+            (1.0..=50.0).contains(&bits_per_item),
             "Bits per item should be reasonable: {}",
             bits_per_item
         );

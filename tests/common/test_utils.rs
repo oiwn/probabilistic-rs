@@ -1,6 +1,6 @@
 use axum::Router;
 use expiring_bloom_rs::{
-    AppState, FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder,
+    AppState, FilterConfigBuilder, FjallFilter, FjallFilterConfigBuilder,
     server::api::create_router,
 };
 use std::{fs, path::PathBuf};
@@ -14,7 +14,7 @@ pub struct TestDb {
 impl TestDb {
     /// Create a new test database with a name based on the test name
     pub fn new(test_name: &str) -> Self {
-        let path = format!("test_db_{test_name}.redb").into();
+        let path = format!("test_db_{test_name}.fjall").into();
         Self { path }
     }
 
@@ -34,18 +34,22 @@ impl TestDb {
 impl Drop for TestDb {
     fn drop(&mut self) {
         if self.path.exists() {
-            let _ = fs::remove_file(&self.path);
+            if self.path.is_dir() {
+                let _ = fs::remove_dir_all(&self.path);
+            } else {
+                let _ = fs::remove_file(&self.path);
+            }
         }
     }
 }
 
-pub fn setup_test_redb(
+pub fn setup_test_fjall(
     db_path: &str,
     capacity: usize,
     level_duration: Duration,
     max_levels: usize,
     snapshot_interval: Duration,
-) -> RedbFilter {
+) -> FjallFilter {
     let filter_config = FilterConfigBuilder::default()
         .capacity(capacity)
         .false_positive_rate(0.01)
@@ -54,14 +58,14 @@ pub fn setup_test_redb(
         .build()
         .unwrap();
 
-    let redb_config = RedbFilterConfigBuilder::default()
+    let fjall_config = FjallFilterConfigBuilder::default()
         .db_path(PathBuf::from(db_path))
         .filter_config(Some(filter_config))
         .snapshot_interval(snapshot_interval)
         .build()
         .unwrap();
 
-    RedbFilter::new(redb_config).expect("Unable to create filter...")
+    FjallFilter::new(fjall_config).expect("Unable to create filter...")
 }
 
 // FIXME: btw this is detected as dead code while it's not
@@ -69,7 +73,7 @@ pub fn setup_test_redb(
 pub async fn setup_test_app(test_name: &str, capacity: usize) -> Router {
     let test_db = TestDb::new(&format!("server_test_{test_name}"));
 
-    let filter = setup_test_redb(
+    let filter = setup_test_fjall(
         &test_db.path_string(),
         capacity,
         Duration::from_secs(1),

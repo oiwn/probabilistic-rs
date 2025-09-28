@@ -82,10 +82,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Persistent Filter with ReDB
+### Persistent Filter with Fjall
 
 ```rust
-use expiring_bloom_rs::{FilterConfigBuilder, RedbSlidingBloomFilter, SlidingBloomFilter};
+use expiring_bloom_rs::{
+    ExpiringBloomFilter, FilterConfigBuilder, FjallFilter, FjallFilterConfigBuilder,
+};
 use std::{path::PathBuf, time::Duration};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -97,17 +99,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     // Filter state persists across program restarts
-    let mut filter = RedbSlidingBloomFilter::new(
-        Some(config), 
-        PathBuf::from("bloom_database.redb")
-    )?;
-    
+    let fjall_config = FjallFilterConfigBuilder::default()
+        .db_path(PathBuf::from("bloom_database.fjall"))
+        .filter_config(Some(config))
+        .snapshot_interval(Duration::from_secs(60))
+        .build()?;
+
+    let filter = FjallFilter::new(fjall_config)?;
     filter.insert(b"persistent_item")?;
-    
+    filter.save_snapshot()?;
+
     // Later or in another process:
-    // let filter = RedbSlidingBloomFilter::new(None, PathBuf::from("bloom_database.redb"))?;
+    // let filter = FjallFilter::new(
+    //     FjallFilterConfigBuilder::default()
+    //         .db_path(PathBuf::from("bloom_database.fjall"))
+    //         .build()?,
+    // )?;
     // filter.query(b"persistent_item")?; // Returns true if not expired
-    
+
     Ok(())
 }
 ```
@@ -124,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server_config = ServerConfigBuilder::default()
         .server_host("127.0.0.1".to_string())
         .server_port(3000)
-        .bloom_db_path("bloom.redb".to_string())
+        .bloom_db_path("bloom.fjall".to_string())
         .bloom_capacity(10000)
         .bloom_false_positive_rate(0.01)
         .bloom_level_duration(Duration::from_secs(60))
@@ -144,16 +153,16 @@ The crate includes a command-line interface with both command mode and an intera
 
 ```bash
 # Create a new filter
-expblf create --db-path myfilter.redb --capacity 10000 --fpr 0.01
+expblf create --db-path myfilter.fjall --capacity 10000 --fpr 0.01
 
 # Insert an element
-expblf load --db-path myfilter.redb insert --element "example-key"
+expblf load --db-path myfilter.fjall insert --element "example-key"
 
 # Check if an element exists
-expblf load --db-path myfilter.redb check --element "example-key"
+expblf load --db-path myfilter.fjall check --element "example-key"
 
 # Start interactive TUI
-expblf tui --db-path myfilter.redb
+expblf tui --db-path myfilter.fjall
 ```
 
 ## API Endpoints

@@ -7,8 +7,8 @@ use comfy_table::{
     ContentArrangement, Table, modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL,
 };
 use expiring_bloom_rs::{
-    ExpiringBloomFilter, FilterConfigBuilder, FilterStorage, RedbFilter,
-    RedbFilterConfigBuilder,
+    ExpiringBloomFilter, FilterConfigBuilder, FilterStorage, FjallFilter,
+    FjallFilterConfigBuilder,
 };
 use rand::{Rng, distr::Alphanumeric, seq::IndexedRandom};
 use std::{
@@ -42,13 +42,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         UNIQUE_ITEMS, TRACEABLE_ITEMS
     );
 
-    let file_name = format!("bloom_multilevel_{}.redb", CAPACITY);
+    let file_name = format!("bloom_multilevel_{}.fjall", CAPACITY);
     let db_path = Path::new(&file_name);
 
     // Remove any existing database file
     if db_path.exists() {
-        fs::remove_file(db_path)?;
-        let message = "Removed existing database file".red();
+        if db_path.is_dir() {
+            fs::remove_dir_all(db_path)?;
+        } else {
+            fs::remove_file(db_path)?;
+        }
+        let message = "Removed existing database".red();
         println!("{} : {}", message, db_path.display());
     }
 
@@ -478,13 +482,23 @@ fn format_file_size(size: u64) -> String {
     }
 }
 
-// Get file size in bytes
+// Get file or directory size in bytes
 fn get_file_size(path: &Path) -> std::io::Result<u64> {
-    let metadata = fs::metadata(path)?;
-    Ok(metadata.len())
+    if path.is_file() {
+        Ok(fs::metadata(path)?.len())
+    } else if path.is_dir() {
+        let mut total = 0;
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            total += get_file_size(&entry.path())?;
+        }
+        Ok(total)
+    } else {
+        Ok(0)
+    }
 }
 
-fn create_filter(db_path: &Path) -> RedbFilter {
+fn create_filter(db_path: &Path) -> FjallFilter {
     // Create the filter configuration
     let config = FilterConfigBuilder::default()
         .capacity(CAPACITY)
@@ -494,7 +508,7 @@ fn create_filter(db_path: &Path) -> RedbFilter {
         .build()
         .unwrap();
 
-    let redb_config = RedbFilterConfigBuilder::default()
+    let fjall_config = FjallFilterConfigBuilder::default()
         .db_path(db_path.to_path_buf())
         .filter_config(Some(config))
         .snapshot_interval(Duration::from_secs(60))
@@ -502,11 +516,11 @@ fn create_filter(db_path: &Path) -> RedbFilter {
         .unwrap();
 
     // Create a new filter
-    RedbFilter::new(redb_config).unwrap()
+    FjallFilter::new(fjall_config).unwrap()
 }
 
 // Calculate average bit density in a bit vector
-fn calculate_bit_density(filter: &RedbFilter, level: usize) -> f64 {
+fn calculate_bit_density(filter: &FjallFilter, level: usize) -> f64 {
     let level_bits = &filter.storage.levels[level];
     let set_bits = level_bits.iter().filter(|bit| **bit).count();
 
@@ -515,7 +529,7 @@ fn calculate_bit_density(filter: &RedbFilter, level: usize) -> f64 {
 
 // Measure query performance
 fn measure_query_performance(
-    filter: &RedbFilter,
+    filter: &FjallFilter,
     known_items: &[String],
     unknown_items: &[String],
     traceable_items: &[String],

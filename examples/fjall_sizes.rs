@@ -127,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nDetailed file information:");
     for (capacity, fill_count, size) in &results {
-        let db_path = format!("bloom_size_{}.redb", capacity);
+        let db_path = format!("bloom_size_{}.fjall", capacity);
         let bits_per_item = (size * 8) as f64 / *fill_count as f64;
 
         println!("File: {}", db_path);
@@ -139,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nCleaning up database files...");
     for (capacity, _, _) in &results {
-        let file_name = format!("bloom_size_{}.redb", capacity);
+        let file_name = format!("bloom_size_{}.fjall", capacity);
         let db_path = Path::new(&file_name);
         if db_path.exists() {
             let _ = fs::remove_file(db_path);

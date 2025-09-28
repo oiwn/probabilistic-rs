@@ -86,10 +86,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create the app state
     let app = App {
-        filter: expiring_bloom_rs::RedbFilter::new(
-            expiring_bloom_rs::RedbFilterConfigBuilder::default()
-                .db_path("workflow_temp.redb".into())
+        filter: expiring_bloom_rs::FjallFilter::new(
+            expiring_bloom_rs::FjallFilterConfigBuilder::default()
+                .db_path("workflow_temp.fjall".into())
                 .filter_config(Some(config.clone()))
+                .snapshot_interval(Duration::from_secs(60))
                 .build()?,
         )?,
         input: String::new(),
@@ -227,7 +228,7 @@ fn custom_run_app<B: ratatui::backend::Backend>(
                 }
 
                 // Also insert into the display filter
-                if let Some(redb_filter) = app
+                if let Some(display_filter_level) = app
                     .filter
                     .storage
                     .levels
@@ -240,9 +241,8 @@ fn custom_run_app<B: ratatui::backend::Backend>(
                         .iter()
                         .enumerate()
                     {
-                        if i < redb_filter.len() {
-                            redb_filter.set(i, *bit);
-                            // redb_filter[i] = *bit;
+                        if i < display_filter_level.len() {
+                            display_filter_level.set(i, *bit);
                         }
                     }
                 }
@@ -263,101 +263,103 @@ fn custom_run_app<B: ratatui::backend::Backend>(
         }
 
         // Process keyboard input
-        if ratatui::crossterm::event::poll(Duration::from_millis(100))? {
-            if let ratatui::crossterm::event::Event::Key(key) =
+        if ratatui::crossterm::event::poll(Duration::from_millis(100))?
+            && let ratatui::crossterm::event::Event::Key(key) =
                 ratatui::crossterm::event::read()?
-            {
-                match app.input_mode {
-                    InputMode::Normal => match key.code {
-                        ratatui::crossterm::event::KeyCode::Char('c') => {
-                            app.input_mode = InputMode::Checking;
-                            app.input.clear();
+        {
+            match app.input_mode {
+                InputMode::Normal => match key.code {
+                    ratatui::crossterm::event::KeyCode::Char('c') => {
+                        app.input_mode = InputMode::Checking;
+                        app.input.clear();
+                    }
+                    ratatui::crossterm::event::KeyCode::Char('q') => {
+                        return Ok(());
+                    }
+                    // Level navigation
+                    ratatui::crossterm::event::KeyCode::Down => {
+                        app.current_view_level =
+                            (app.current_view_level + 1) % MAX_LEVELS;
+                    }
+                    ratatui::crossterm::event::KeyCode::Up => {
+                        if app.current_view_level > 0 {
+                            app.current_view_level -= 1;
+                        } else {
+                            app.current_view_level = MAX_LEVELS - 1;
                         }
-                        ratatui::crossterm::event::KeyCode::Char('q') => {
-                            return Ok(());
+                    }
+                    // Bit view navigation
+                    ratatui::crossterm::event::KeyCode::Right => {
+                        app.view_offset =
+                            app.view_offset.saturating_add(app.bits_per_row);
+                        if app.view_offset >= CAPACITY {
+                            app.view_offset = CAPACITY - 1;
                         }
-                        // Level navigation
-                        ratatui::crossterm::event::KeyCode::Down => {
-                            app.current_view_level =
-                                (app.current_view_level + 1) % MAX_LEVELS;
-                        }
-                        ratatui::crossterm::event::KeyCode::Up => {
-                            if app.current_view_level > 0 {
-                                app.current_view_level -= 1;
-                            } else {
-                                app.current_view_level = MAX_LEVELS - 1;
-                            }
-                        }
-                        // Bit view navigation
-                        ratatui::crossterm::event::KeyCode::Right => {
-                            app.view_offset =
-                                app.view_offset.saturating_add(app.bits_per_row);
-                            if app.view_offset >= CAPACITY {
-                                app.view_offset = CAPACITY - 1;
-                            }
-                        }
-                        ratatui::crossterm::event::KeyCode::Left => {
-                            app.view_offset =
-                                app.view_offset.saturating_sub(app.bits_per_row);
-                        }
-                        _ => {}
-                    },
-                    InputMode::Checking => {
-                        match key.code {
-                            ratatui::crossterm::event::KeyCode::Enter => {
-                                let query_item = app.input.clone();
+                    }
+                    ratatui::crossterm::event::KeyCode::Left => {
+                        app.view_offset =
+                            app.view_offset.saturating_sub(app.bits_per_row);
+                    }
+                    _ => {}
+                },
+                InputMode::Checking => {
+                    match key.code {
+                        ratatui::crossterm::event::KeyCode::Enter => {
+                            let query_item = app.input.clone();
 
-                                // Query the filter
-                                match filter.query(query_item.as_bytes()) {
-                                    Ok(exists) => {
-                                        if exists {
-                                            app.messages.push(AppMessage {
-                                                content: format!(
-                                                    "'{}' exists in filter",
-                                                    query_item
-                                                ),
-                                                msg_type: MessageType::Success,
-                                            });
-                                        } else {
-                                            app.messages.push(AppMessage {
-                                            content: format!("'{}' does not exist in filter", query_item),
-                                            msg_type: MessageType::Error,
-                                        });
-                                        }
-
-                                        // Record query result for statistics
-                                        query_history
-                                            .insert(query_item.clone(), exists);
-                                    }
-                                    Err(e) => {
+                            // Query the filter
+                            match filter.query(query_item.as_bytes()) {
+                                Ok(exists) => {
+                                    if exists {
                                         app.messages.push(AppMessage {
                                             content: format!(
-                                                "Error querying '{}': {}",
-                                                query_item, e
+                                                "'{}' exists in filter",
+                                                query_item
+                                            ),
+                                            msg_type: MessageType::Success,
+                                        });
+                                    } else {
+                                        app.messages.push(AppMessage {
+                                            content: format!(
+                                                "'{}' does not exist in filter",
+                                                query_item
                                             ),
                                             msg_type: MessageType::Error,
                                         });
                                     }
-                                }
 
-                                app.input.clear();
-                                app.input_mode = InputMode::Normal;
+                                    // Record query result for statistics
+                                    query_history
+                                        .insert(query_item.clone(), exists);
+                                }
+                                Err(e) => {
+                                    app.messages.push(AppMessage {
+                                        content: format!(
+                                            "Error querying '{}': {}",
+                                            query_item, e
+                                        ),
+                                        msg_type: MessageType::Error,
+                                    });
+                                }
                             }
-                            ratatui::crossterm::event::KeyCode::Char(c) => {
-                                app.input.push(c);
-                            }
-                            ratatui::crossterm::event::KeyCode::Backspace => {
-                                app.input.pop();
-                            }
-                            ratatui::crossterm::event::KeyCode::Esc => {
-                                app.input.clear();
-                                app.input_mode = InputMode::Normal;
-                            }
-                            _ => {}
+
+                            app.input.clear();
+                            app.input_mode = InputMode::Normal;
                         }
+                        ratatui::crossterm::event::KeyCode::Char(c) => {
+                            app.input.push(c);
+                        }
+                        ratatui::crossterm::event::KeyCode::Backspace => {
+                            app.input.pop();
+                        }
+                        ratatui::crossterm::event::KeyCode::Esc => {
+                            app.input.clear();
+                            app.input_mode = InputMode::Normal;
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
+                _ => {}
             }
         }
     }
