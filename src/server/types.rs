@@ -1,4 +1,4 @@
-use crate::{FilterConfig, FilterError, RedbFilter, Result};
+use crate::{FilterConfig, FilterError, FjallFilter, Result};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -21,7 +21,7 @@ pub struct ErrorResponse {
 }
 
 pub struct AppState {
-    pub filter: Mutex<RedbFilter>,
+    pub filter: Mutex<FjallFilter>,
 }
 
 #[derive(Builder, Clone)]
@@ -31,7 +31,7 @@ pub struct ServerConfig {
     pub server_host: String,
     #[builder(default = "3000")]
     pub server_port: u16,
-    #[builder(default = "\"bloom.redb\".to_string()")]
+    #[builder(default = "\"bloom.fjall\".to_string()")]
     pub bloom_db_path: String,
     #[builder(default = "1_000_000")]
     pub bloom_capacity: usize,
@@ -61,7 +61,7 @@ impl ServerConfig {
                     }
                 })?,
             bloom_db_path: std::env::var("BLOOM_DB_PATH")
-                .unwrap_or_else(|_| "bloom.redb".to_string()),
+                .unwrap_or_else(|_| "bloom.fjall".to_string()),
             bloom_capacity: std::env::var("BLOOM_CAPACITY")
                 .unwrap_or_else(|_| "10000".to_string())
                 .parse()

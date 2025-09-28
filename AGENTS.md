@@ -3,8 +3,7 @@ in the code—use this file as the quick brief.
 
 ## Project Overview
 
-- Rust time-decaying Bloom filter with optional persistence (Fjall primary,
-  ReDB legacy).
+- Rust time-decaying Bloom filter with optional persistence via Fjall.
 - API targets: simple `BloomFilter` core + higher-level expiring filter built
   on top.
 - Delivered components: CLI/TUI, Axum HTTP server, extensive test suite.
@@ -12,7 +11,7 @@ in the code—use this file as the quick brief.
 ## Architecture Highlights
 
 - `src/bloom/`: core filter (`filter.rs`), configuration (`config.rs`), traits (`traits.rs`), errors (`error.rs`).
-- `src/storage/`: backend implementations (`fjall_filter.rs`, `inmemory_filter.rs`, `redb_filter.rs` until deprecation).
+- `src/storage/`: backend implementations (`fjall_filter.rs`, `inmemory_filter.rs`).
 - `src/probablistic/`: legacy expiring filter that will be rebuilt around the core filter.
 - Hashing (`src/hash.rs`) uses Murmur3 + FNV-1a double hashing to compute bit indices.
 - Concurrency relies on interior `RwLock` + atomics; external callers only need `Arc<BloomFilter>` when sharing.
@@ -42,7 +41,7 @@ in the code—use this file as the quick brief.
       snapshots (incremental save throughput + chunk stats).
 - [ ] explore refactoring the expiring Bloom filter to reuse the new core filter
       instead of bespoke logic; identify required API gaps before implementation.
-- [ ] remove the ReDB backend (feature flags, code, tests, docs) once Fjall parity is validated.
+- [x] remove the ReDB backend (feature flags, code, tests, docs) once Fjall parity is validated.
 - [ ] cli tool to communicate with the database. check if element exists, insert element.
 - [ ] run web server for core bloom and expiring bloom
 - [ ] operations with databases, like union of 2, intersection. look what's possible.

@@ -171,8 +171,7 @@ mod fjall_core_bench {
         let dirty_bytes: usize =
             dirty_chunks.iter().map(|(_, bytes)| bytes.len()).sum();
         let chunk_size_bits = 4096 * 8;
-        let total_chunks =
-            (filter.bit_vector_size + chunk_size_bits - 1) / chunk_size_bits;
+        let total_chunks = filter.bit_vector_size.div_ceil(chunk_size_bits);
         let stats = SnapshotStats {
             dirty_chunks: dirty_chunks.len(),
             dirty_bytes,

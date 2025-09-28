@@ -1,7 +1,7 @@
 use expiring_bloom_rs::server::api::create_router;
 use expiring_bloom_rs::server::types::AppState;
 use expiring_bloom_rs::{
-    FilterConfig, RedbFilter, RedbFilterConfigBuilder, ServerConfig,
+    FilterConfig, FjallFilter, FjallFilterConfigBuilder, ServerConfig,
 };
 use std::{path::PathBuf, sync::Arc};
 use tracing::info;
@@ -38,23 +38,23 @@ async fn main() {
             db_path.display()
         );
 
-        let redb_config = RedbFilterConfigBuilder::default()
+        let fjall_config = FjallFilterConfigBuilder::default()
             .db_path(db_path.clone())
             .snapshot_interval(std::time::Duration::from_secs(60))
             .build()
-            .expect("Failed to create RedbFilterConfig");
-        RedbFilter::new(redb_config)
+            .expect("Failed to create FjallFilterConfig");
+        FjallFilter::new(fjall_config)
     } else {
         // No database, create new one with config from environment
         info!("Creating new Bloom filter database: {}", db_path.display());
-        let redb_config = RedbFilterConfigBuilder::default()
+        let fjall_config = FjallFilterConfigBuilder::default()
             .db_path(db_path.clone())
             .filter_config(Some(env_filter_config.clone()))
             .snapshot_interval(std::time::Duration::from_secs(60))
             .build()
-            .expect("Failed to create RedbFilterConfig");
+            .expect("Failed to create FjallFilterConfig");
 
-        RedbFilter::new(redb_config)
+        FjallFilter::new(fjall_config)
     }
     .expect("Failed to initialize Bloom filter");
 

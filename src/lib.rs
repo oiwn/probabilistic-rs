@@ -1,4 +1,4 @@
-//! Time-Decaying Bloom Filter implementation with ReDB or InMemory storage backends.
+//! Time-Decaying Bloom Filter implementation with Fjall or InMemory storage backends.
 //!
 //! This crate provides a Bloom filter implementation that automatically expires
 //! elements after a configurable time period using a sliding window approach.
@@ -57,8 +57,4 @@ pub use storage::fjall_filter::{
     FjallFilter, FjallFilterConfig, FjallFilterConfigBuilder,
 };
 pub use storage::inmemory_filter::InMemoryFilter;
-#[cfg(feature = "redb")]
-pub use storage::redb_filter::{
-    RedbFilter, RedbFilterConfig, RedbFilterConfigBuilder,
-};
 pub use storage::{FilterStorage, InMemoryStorage};

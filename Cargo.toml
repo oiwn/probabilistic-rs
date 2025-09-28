@@ -36,15 +36,13 @@ serde_json = { version = "1", optional = true }
 clap = { version = "4.5", features = ["derive"], optional = true }
 ratatui = { version = "0.29", optional = true }
 unicode-width = { version = "0.2", optional = true }
-# redb
-redb = { version = "2", optional = true }
 # fjall
 fjall = { version = "2.8", optional = true }
 async-trait = "0.1"
 
 [dev-dependencies]
 rand = "0.9"
-expiring-bloom-rs = { path = ".", features = ["fjall", "redb", "server", "cli"] }
+expiring-bloom-rs = { path = ".", features = ["fjall", "server", "cli"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 tower = "0.5"
 comfy-table = "7.1"
@@ -54,29 +52,28 @@ tokio = "1"
 [[bin]]
 name = "expblf"
 path = "src/bin/cli.rs"
-required-features = ["redb", "cli"]
+required-features = ["fjall", "cli"]
 
 [[bin]]
 name = "expblf-server"
 path = "src/bin/server.rs"
-required-features = ["server", "redb"]
+required-features = ["server", "fjall"]
 
 [package.metadata.docs.rs]
 no-default-features = true
-features = ["redb", "cli"]
+features = ["fjall", "cli"]
 all-features = false
 
 [features]
-default = ["redb", "server", "cli", "fjall"]
-docs-only = ["cli", "redb", "fjall"]
-redb = ["dep:redb"]
+default = ["server", "cli", "fjall"]
+docs-only = ["cli", "fjall"]
 fjall = ["dep:fjall"]
-server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde_json", "dep:dotenvy", "dep:redb"]
-cli = ["dep:clap", "dep:ratatui", "dep:unicode-width", "redb"]
+server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde_json", "dep:dotenvy", "fjall"]
+cli = ["dep:clap", "dep:ratatui", "dep:unicode-width", "fjall"]
 tests = []
 
 [package.metadata.docs]
-features = ["redb", "cli", "fjall"]  # Exclude "server" feature
+features = ["cli", "fjall"]  # Exclude "server" feature
 all-features = false
 
 [lints.rust]
@@ -88,10 +85,6 @@ harness = false
 
 [[bench]]
 name = "bloom_fjall_benchmarks"
-harness = false
-
-[[bench]]
-name = "redb_snapshot_benchmarks"
 harness = false
 
 [[bench]]

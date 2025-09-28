@@ -3,7 +3,8 @@ mod common;
 
 use common::{format_file_size, generate_random_string};
 use expiring_bloom_rs::{
-    ExpiringBloomFilter, FilterConfigBuilder, RedbFilter, RedbFilterConfigBuilder,
+    ExpiringBloomFilter, FilterConfigBuilder, FjallFilter,
+    FjallFilterConfigBuilder,
 };
 use std::{
     fs,
@@ -11,10 +12,20 @@ use std::{
     time::{Duration, Instant},
 };
 
-// Get file size in bytes
-fn get_file_size(path: &Path) -> std::io::Result<u64> {
-    let metadata = fs::metadata(path)?;
-    Ok(metadata.len())
+// Get file or directory size in bytes
+fn get_path_size(path: &Path) -> std::io::Result<u64> {
+    if path.is_file() {
+        Ok(fs::metadata(path)?.len())
+    } else if path.is_dir() {
+        let mut total = 0;
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            total += get_path_size(&entry.path())?;
+        }
+        Ok(total)
+    } else {
+        Ok(0)
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,8 +37,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for &capacity in &capacities {
         // Create the database path
 
-        let file_name = format!("bloom_size_{}.redb", capacity);
+        let file_name = format!("bloom_size_{}.fjall", capacity);
         let db_path = Path::new(&file_name);
+
+        if db_path.exists() {
+            if db_path.is_dir() {
+                fs::remove_dir_all(db_path)?;
+            } else {
+                fs::remove_file(db_path)?;
+            }
+        }
 
         // Calculate 75% of capacity
         let fill_count = (capacity * 75) / 100;
@@ -45,14 +64,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .max_levels(3)
             .build()?;
 
-        let redb_config = RedbFilterConfigBuilder::default()
+        let fjall_config = FjallFilterConfigBuilder::default()
             .db_path(db_path.to_path_buf().clone())
             .filter_config(Some(config))
             .snapshot_interval(Duration::from_secs(60))
             .build()?;
 
         // Create a new filter
-        let mut filter = RedbFilter::new(redb_config)?;
+        let mut filter = FjallFilter::new(fjall_config)?;
 
         let start_time = Instant::now();
         // Fill the filter with random data
@@ -83,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Get the file size
         let path = Path::new(&db_path);
-        let size = get_file_size(path)?;
+        let size = get_path_size(path)?;
 
         // Store results for later display
         results.push((capacity, fill_count, size));
@@ -111,7 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nDetailed file information:");
     for (capacity, fill_count, size) in &results {
-        let db_path = format!("bloom_size_{}.redb", capacity);
+        let db_path = format!("bloom_size_{}.fjall", capacity);
         let bits_per_item = (size * 8) as f64 / *fill_count as f64;
 
         println!("File: {}", db_path);
