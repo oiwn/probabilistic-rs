@@ -272,32 +272,6 @@ impl BloomFilter {
         bytes
     }
 
-    /* fn extract_chunk_bytes(
-        &self,
-        chunk_id: usize,
-        chunk_size_bits: usize,
-    ) -> Vec<u8> {
-        let start_bit = chunk_id * chunk_size_bits;
-        let end_bit = std::cmp::min(start_bit + chunk_size_bits, self.bits.len());
-
-        // Convert bit range to bytes
-        let chunk_bits = &self.bits[start_bit..end_bit];
-        let mut bytes = Vec::new();
-
-        // Pack bits into bytes (8 bits per byte)
-        for byte_chunk in chunk_bits.chunks(8) {
-            let mut byte = 0u8;
-            for (bit_pos, bit) in byte_chunk.iter().enumerate() {
-                if *bit {
-                    byte |= 1 << bit_pos;
-                }
-            }
-            bytes.push(byte);
-        }
-
-        bytes
-    } */
-
     fn reconstruct_from_chunks(
         &mut self,
         chunks: &[(usize, Vec<u8>)],

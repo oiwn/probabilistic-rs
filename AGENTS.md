@@ -39,6 +39,7 @@ in the code—use this file as the quick brief.
 
 - [x] add Criterion benchmarks covering core Bloom filter persistence with Fjall
       snapshots (incremental save throughput + chunk stats).
+- [ ] bulk writes for core bloom filter.
 - [ ] explore refactoring the expiring Bloom filter to reuse the new core filter
       instead of bespoke logic; identify required API gaps before implementation.
 - [x] remove the ReDB backend (feature flags, code, tests, docs) once Fjall parity is validated.
