@@ -1,6 +1,6 @@
-use expiring_bloom_rs::server::api::create_router;
-use expiring_bloom_rs::server::types::AppState;
-use expiring_bloom_rs::{
+use probablistic_rs::server::api::create_router;
+use probablistic_rs::server::types::AppState;
+use probablistic_rs::{
     FilterConfig, FjallFilter, FjallFilterConfigBuilder, ServerConfig,
 };
 use std::{path::PathBuf, sync::Arc};

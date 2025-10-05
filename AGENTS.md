@@ -34,12 +34,13 @@ in the code—use this file as the quick brief.
 2. Added concurrency regression test proving safe Arc-based sharing with concurrent writers/readers.
 3. Brought persistence traits in line with the new API surface (`load_from_storage(&self)`).
 4. Landed Criterion bench `benches/bloom_fjall_benchmarks.rs` measuring incremental Fjall snapshot throughput (1M capacity, 4 KiB chunks, 10%/50% fills + 1% dirty delta).
+5. Implemented bulk operations (`insert_bulk`, `contains_bulk`) for core Bloom filter with comprehensive tests and examples.
 
 ## Ideas List
 
 - [x] add Criterion benchmarks covering core Bloom filter persistence with Fjall
       snapshots (incremental save throughput + chunk stats).
-- [ ] bulk writes for core bloom filter.
+- [x] bulk writes for core bloom filter.
 - [ ] explore refactoring the expiring Bloom filter to reuse the new core filter
       instead of bespoke logic; identify required API gaps before implementation.
 - [x] remove the ReDB backend (feature flags, code, tests, docs) once Fjall parity is validated.

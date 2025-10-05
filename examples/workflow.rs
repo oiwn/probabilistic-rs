@@ -1,7 +1,7 @@
 #![allow(clippy::uninlined_format_args)]
 mod common;
 
-use expiring_bloom_rs::{
+use probablistic_rs::{
     ExpiringBloomFilter, FilterConfigBuilder, InMemoryFilter,
     tui::{App, AppMessage, InputMode, MessageType},
 };
@@ -86,8 +86,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create the app state
     let app = App {
-        filter: expiring_bloom_rs::FjallFilter::new(
-            expiring_bloom_rs::FjallFilterConfigBuilder::default()
+        filter: probablistic_rs::FjallFilter::new(
+            probablistic_rs::FjallFilterConfigBuilder::default()
                 .db_path("workflow_temp.fjall".into())
                 .filter_config(Some(config.clone()))
                 .snapshot_interval(Duration::from_secs(60))
@@ -191,7 +191,7 @@ fn custom_run_app<B: ratatui::backend::Backend>(
 
     loop {
         // Render the TUI
-        terminal.draw(|f| expiring_bloom_rs::tui::ui(f, &app))?;
+        terminal.draw(|f| probablistic_rs::tui::ui(f, &app))?;
 
         // Check if it's time for auto-insertion
         let now = Instant::now();

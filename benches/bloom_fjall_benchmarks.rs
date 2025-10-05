@@ -17,7 +17,7 @@ mod fjall_core_bench {
     use criterion::{
         BenchmarkId, Criterion, Throughput, black_box, criterion_group,
     };
-    use expiring_bloom_rs::bloom::{
+    use probablistic_rs::bloom::{
         BloomFilter, BloomFilterConfigBuilder, BloomFilterOps,
         PersistenceConfigBuilder,
     };
@@ -194,7 +194,7 @@ mod fjall_core_bench {
 
     fn build_config(
         db_path: PathBuf,
-    ) -> expiring_bloom_rs::bloom::BloomFilterConfig {
+    ) -> probablistic_rs::bloom::BloomFilterConfig {
         let persistence = PersistenceConfigBuilder::default()
             .db_path(db_path)
             .chunk_size_bytes(4096)

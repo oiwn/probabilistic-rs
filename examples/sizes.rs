@@ -2,7 +2,7 @@
 mod common;
 
 use common::{format_file_size, generate_random_string};
-use expiring_bloom_rs::{
+use probablistic_rs::{
     ExpiringBloomFilter, FilterConfigBuilder, FjallFilter,
     FjallFilterConfigBuilder,
 };

@@ -1,5 +1,5 @@
 use axum::Router;
-use expiring_bloom_rs::{
+use probablistic_rs::{
     AppState, FilterConfigBuilder, FjallFilter, FjallFilterConfigBuilder,
     server::api::create_router,
 };

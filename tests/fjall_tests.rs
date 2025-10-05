@@ -1,6 +1,6 @@
 #[cfg(feature = "fjall")]
 mod tests {
-    use expiring_bloom_rs::{
+    use probablistic_rs::{
         ExpiringBloomFilter, FilterConfigBuilder, FjallFilter,
         FjallFilterConfigBuilder,
     };

@@ -1,7 +1,7 @@
 #![allow(clippy::uninlined_format_args)]
 mod common;
 
-use expiring_bloom_rs::{
+use probablistic_rs::{
     ExpiringBloomFilter, FilterConfigBuilder, FilterStorage, InMemoryFilter,
     common::bits2hr, optimal_bit_vector_size, optimal_num_hashes,
 };

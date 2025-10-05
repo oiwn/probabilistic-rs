@@ -5,7 +5,7 @@ use comfy_table::{
     modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL,
 };
 use common::generate_test_data;
-use expiring_bloom_rs::{
+use probablistic_rs::{
     ExpiringBloomFilter, FilterConfigBuilder, InMemoryFilter,
 };
 use std::time::Duration;

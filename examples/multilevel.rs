@@ -6,7 +6,7 @@ use colored::Colorize;
 use comfy_table::{
     ContentArrangement, Table, modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL,
 };
-use expiring_bloom_rs::{
+use probablistic_rs::{
     ExpiringBloomFilter, FilterConfigBuilder, FilterStorage, FjallFilter,
     FjallFilterConfigBuilder,
 };

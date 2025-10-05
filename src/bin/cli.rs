@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use expiring_bloom_rs::{
+use probablistic_rs::{
     ExpiringBloomFilter, FilterConfigBuilder, FjallFilter,
     FjallFilterConfigBuilder, optimal_bit_vector_size, optimal_num_hashes,
     tui::{App, AppMessage, InputMode, MessageType, run_app},
