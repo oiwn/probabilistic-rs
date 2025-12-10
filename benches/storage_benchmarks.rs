@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use probablistic_rs::{FilterStorage, InMemoryStorage};
+use probabilistic_rs::{FilterStorage, InMemoryStorage};
 use rand::{Rng, distr::Uniform};
 use std::collections::HashSet;
 use std::sync::{Arc, Barrier, RwLock};

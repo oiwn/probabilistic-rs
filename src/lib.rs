@@ -29,32 +29,12 @@
 
 pub mod bloom;
 pub mod common;
-mod error;
+pub mod ebloom;
 mod hash;
-mod probablistic;
-#[cfg(feature = "server")]
-pub mod server;
-mod storage;
-#[cfg(feature = "cli")]
-pub mod tui;
 
-pub use error::{FilterError, Result};
+pub use bloom::error::{BloomError, BloomResult};
+pub use ebloom::error::{EbloomError, EbloomResult};
 pub use hash::{
     HashFunction, default_hash_function, optimal_bit_vector_size,
     optimal_num_hashes,
 };
-pub use probablistic::filter::{
-    self, ExpiringBloomFilter, FilterConfig, FilterConfigBuilder,
-    FilterConfigBuilderError,
-};
-#[cfg(feature = "server")]
-pub use server::types::{
-    AppState, ErrorResponse, InsertRequest, QueryResponse, ServerConfig,
-    ServerConfigBuilder, ServerConfigBuilderError,
-};
-#[cfg(feature = "fjall")]
-pub use storage::fjall_filter::{
-    FjallFilter, FjallFilterConfig, FjallFilterConfigBuilder,
-};
-pub use storage::inmemory_filter::InMemoryFilter;
-pub use storage::{FilterStorage, InMemoryStorage};

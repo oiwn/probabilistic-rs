@@ -1,4 +1,4 @@
-use probablistic_rs::bloom::{
+use probabilistic_rs::bloom::{
     BloomFilter, BloomFilterConfigBuilder, BloomFilterOps, BloomFilterStats,
 };
 use std::{
@@ -688,7 +688,7 @@ mod integration_tests {
 #[cfg(test)]
 mod bulk_operations_tests {
     use super::*;
-    use probablistic_rs::bloom::BulkBloomFilterOps;
+    use probabilistic_rs::bloom::BulkBloomFilterOps;
 
     #[test]
     fn test_bulk_insert_empty() {

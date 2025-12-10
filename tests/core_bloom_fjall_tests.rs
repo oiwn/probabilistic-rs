@@ -1,6 +1,6 @@
 #[cfg(feature = "fjall")]
 mod tests {
-    use probablistic_rs::bloom::{
+    use probabilistic_rs::bloom::{
         BloomFilter, BloomFilterConfig, BloomFilterConfigBuilder, BloomFilterOps,
         BloomFilterStats, PersistenceConfigBuilder,
     };
@@ -305,7 +305,7 @@ mod tests {
         let result = BloomFilter::load(invalid_path).await;
         assert!(result.is_err());
         match result {
-            Err(probablistic_rs::bloom::BloomError::StorageError(_)) => {}
+            Err(probabilistic_rs::bloom::BloomError::StorageError(_)) => {}
             _ => panic!("Expected StorageError"),
         }
     }
@@ -331,7 +331,7 @@ mod tests {
         let result = BloomFilter::create(invalid_config).await;
         assert!(result.is_err());
         match result {
-            Err(probablistic_rs::bloom::BloomError::InvalidConfig(_)) => {}
+            Err(probabilistic_rs::bloom::BloomError::InvalidConfig(_)) => {}
             _ => panic!("Expected InvalidConfig error"),
         }
     }

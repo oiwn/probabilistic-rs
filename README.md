@@ -1,9 +1,9 @@
-# probablistic-rs
+# probabilistic-rs
 
-[![Crates.io](https://img.shields.io/crates/v/probablistic-rs.svg)](https://crates.io/crates/probablistic-rs)
-[![Documentation](https://docs.rs/probablistic-rs/badge.svg)](https://docs.rs/probablistic-rs)
-[![codecov](https://codecov.io/gh/oiwn/probablistic-rs/graph/badge.svg?token=5JMM0V5RFO)](https://codecov.io/gh/oiwn/probablistic-rs)
-[![dependency status](https://deps.rs/repo/github/oiwn/probablistic-rs/status.svg)](https://deps.rs/repo/github/oiwn/probablistic-rs)
+[![Crates.io](https://img.shields.io/crates/v/probabilistic-rs.svg)](https://crates.io/crates/probabilistic-rs)
+[![Documentation](https://docs.rs/probabilistic-rs/badge.svg)](https://docs.rs/probabilistic-rs)
+[![codecov](https://codecov.io/gh/oiwn/probabilistic-rs/graph/badge.svg?token=5JMM0V5RFO)](https://codecov.io/gh/oiwn/probabilistic-rs)
+[![dependency status](https://deps.rs/repo/github/oiwn/probabilistic-rs/status.svg)](https://deps.rs/repo/github/oiwn/probabilistic-rs)
 
 # Time-Decaying Bloom Filter
 
@@ -83,13 +83,13 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-probablistic-rs = "0.4"
+probabilistic-rs = "0.4"
 ```
 
 ### Core Bloom Filter Example
 
 ```rust
-use probablistic_rs::bloom::{
+use probabilistic_rs::bloom::{
     BloomFilter, BloomFilterConfigBuilder, BloomFilterOps, BulkBloomFilterOps
 };
 
@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Persistent Core Bloom Filter
 
 ```rust
-use probablistic_rs::bloom::{
+use probabilistic_rs::bloom::{
     BloomFilter, BloomFilterConfigBuilder, PersistenceConfigBuilder
 };
 use std::path::PathBuf;
@@ -157,7 +157,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Time-Decaying Bloom Filter Example
 
 ```rust
-use probablistic_rs::{FilterConfigBuilder, InMemorySlidingBloomFilter, SlidingBloomFilter};
+use probabilistic_rs::{FilterConfigBuilder, InMemorySlidingBloomFilter, SlidingBloomFilter};
 use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -183,8 +183,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Persistent Filter with Fjall
 
 ```rust
-use probablistic_rs::{
-    ExpiringBloomFilter, FilterConfigBuilder, FjallFilter, FjallFilterConfigBuilder,
+use probabilistic_rs::{    ExpiringBloomFilter, FilterConfigBuilder, FjallFilter, FjallFilterConfigBuilder,
 };
 use std::{path::PathBuf, time::Duration};
 
@@ -222,7 +221,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Using the HTTP Server
 
 ```rust
-use probablistic_rs::{ServerConfigBuilder, FilterConfigBuilder};
+use probabilistic_rs::{ServerConfigBuilder, FilterConfigBuilder};
 use std::time::Duration;
 
 #[tokio::main]
@@ -239,7 +238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     // Start the server
-    probablistic_rs::run_server(server_config).await?;
+    probabilistic_rs::run_server(server_config).await?;
     
     Ok(())
 }

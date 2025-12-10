@@ -1,10 +1,10 @@
 #![allow(clippy::uninlined_format_args)]
 // mod common;
-use probablistic_rs::bloom::{
+use probabilistic_rs::bloom::{
     BloomFilter, BloomFilterConfigBuilder, BloomFilterOps, BloomFilterStats,
     BulkBloomFilterOps, PersistenceConfigBuilder,
 };
-use probablistic_rs::common::bits2hr;
+use probabilistic_rs::common::bits2hr;
 use std::collections::HashSet;
 use std::path::PathBuf;
 

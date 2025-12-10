@@ -1,72 +1,63 @@
-Guidance for automation agents hacking on this repository. The full spec lives
-in the code—use this file as the quick brief.
+# Agent Development Guide
 
-## Project Overview
+## Quick Start
 
-- Rust time-decaying Bloom filter with optional persistence via Fjall.
-- API targets: simple `BloomFilter` core + higher-level expiring filter built
-  on top.
-- Delivered components: CLI/TUI, Axum HTTP server, extensive test suite.
+This repository contains probabilistic data structures implementations in Rust.
 
-## Architecture Highlights
+**IMPORTANT**: Always read and update `specs/ctx.md` for current task context, implementation plans, and progress tracking. This file contains only development environment and workflow guidance.
 
-- `src/bloom/`: core filter (`filter.rs`), configuration (`config.rs`), traits (`traits.rs`), errors (`error.rs`).
-- `src/storage/`: backend implementations (`fjall_filter.rs`, `inmemory_filter.rs`).
-- `src/probablistic/`: legacy expiring filter that will be rebuilt around the core filter.
-- Hashing (`src/hash.rs`) uses Murmur3 + FNV-1a double hashing to compute bit indices.
-- Concurrency relies on interior `RwLock` + atomics; external callers only need `Arc<BloomFilter>` when sharing.
+## Development Environment
 
-## Core API Expectations
-
-- `BloomFilterOps::insert`, `clear`, and bulk variants accept `&self`; callers no longer wrap the filter in their own locks.
-- Persistence is opt-in via `PersistenceConfig`; Fjall chunks + dirty bit tracking keep snapshot writes bounded.
-- `PersistentBloomFilter::load_from_storage` now also takes `&self`, consistent with the interior-mutability model.
-
-## Persistence Notes
-
-- Fjall backend stores config + bitvector chunks; see `tests/core_bloom_fjall_tests.rs` for lifecycle coverage.
-- `tests/core_bloom_fjall_tests.rs::test_arc_shared_concurrent_read_write` confirms multiple writer/reader threads behave correctly when the filter is wrapped in an `Arc`.
-- When touching persistence, run the dedicated Fjall tests (`cargo test fjall_tests core_bloom_fjall_tests`).
-
-## Recent Work
-
-1. Converted public ops traits to `&self`, updated implementations/examples/tests accordingly.
-2. Added concurrency regression test proving safe Arc-based sharing with concurrent writers/readers.
-3. Brought persistence traits in line with the new API surface (`load_from_storage(&self)`).
-4. Landed Criterion bench `benches/bloom_fjall_benchmarks.rs` measuring incremental Fjall snapshot throughput (1M capacity, 4 KiB chunks, 10%/50% fills + 1% dirty delta).
-5. Implemented bulk operations (`insert_bulk`, `contains_bulk`) for core Bloom filter with comprehensive tests and examples.
-
-## Ideas List
-
-- [x] add Criterion benchmarks covering core Bloom filter persistence with Fjall
-      snapshots (incremental save throughput + chunk stats).
-- [x] bulk writes for core bloom filter.
-- [ ] explore refactoring the expiring Bloom filter to reuse the new core filter
-      instead of bespoke logic; identify required API gaps before implementation.
-- [x] remove the ReDB backend (feature flags, code, tests, docs) once Fjall parity is validated.
-- [ ] cli tool to communicate with the database. check if element exists, insert element.
-- [ ] run web server for core bloom and expiring bloom
-- [ ] operations with databases, like union of 2, intersection. look what's possible.
-- [ ] better cli which should be extendable
-- [ ] cuckoo filter
-- [ ] hyper-log-log
-- [ ] quotien filter https://en.wikipedia.org/wiki/Quotient_filter
-- [ ] count-min sketch
-
-## Build & Test Commands
+### Build Commands
 ```bash
-cargo fmt --all
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo bench
+cargo fmt --all                    # Format code
+cargo clippy --all-targets -- -D warnings  # Lint with strict warnings
+cargo test                         # Run all tests
+cargo bench                        # Run benchmarks
 ```
-Feature combos: `--features "fjall,server,cli"`. Run targeted tests with `cargo
-test fjall_tests` or `cargo test core_bloom_filter_tests` to stay fast.
-- Fjall incremental snapshot bench: `cargo bench --bench bloom_fjall_benchmarks --features fjall` (needs gnuplot or uses plotters fallback).
+
+### Feature Flags
+- `--features "fjall,server,cli"` for full feature set
+- Individual features: `fjall` (persistence), `server` (HTTP), `cli` (TUI)
+
+### Testing Strategy
+- Run targeted tests to stay fast: `cargo test core_bloom_filter_tests`
+- Persistence tests: `cargo test fjall_tests`
+- Expiring filter tests: `cargo test ebloom_tests`
+
+### File Organization
+- `src/bloom/` - Core Bloom filter implementation
+- `src/ebloom/` - Expiring Bloom filter (WORK IN PROGRESS)
+- `tests/` - Test suites organized by component
+- `specs/` - Detailed module specifications
+- `benches/` - Criterion benchmarks
 
 ## Working Guidelines
-- Prefer `rg` for search; keep edits ASCII unless the file already uses Unicode.
-- Watch for user-local changes in the worktree; never revert unrelated edits.
-- Update examples/tests/docs together when changing core behavior.
-- If persistence snapshots fail, fix both code and regression tests before continuing.
-- do not forget to format code
+
+### Code Style
+- Use `rg` for code searches
+- Keep edits ASCII unless file already uses Unicode
+- All operations accept `&self` for interior mutability
+- Use `Arc<T>` for cross-thread sharing
+
+### Development Workflow
+- Read existing files before editing
+- Match existing code patterns exactly
+- Update examples/tests/docs together
+- Never revert unrelated user changes
+- Always run `cargo fmt` before commits
+
+### Persistence Notes
+- Fjall backend uses chunked storage with dirty tracking
+- When touching persistence, run `cargo test --features fjall`
+- Test with both in-memory and Fjall backends
+
+## Context Management
+
+**All task context, implementation plans, and progress tracking live in `specs/ctx.md`.**
+
+Before starting work:
+1. Read `specs/ctx.md` to understand current task and architecture
+2. Update `specs/ctx.md` with your implementation plan
+3. Track progress and document decisions in `specs/ctx.md`
+4. Keep `specs/ctx.md` updated as the single source of truth for current work

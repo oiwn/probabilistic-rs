@@ -1,4 +1,4 @@
-session_name: expiring-bloom-rs
+session_name: probabilistic-rs
 shell_command_before: "export RUST_LOG=info; clear"
 windows:
   - window_name: code

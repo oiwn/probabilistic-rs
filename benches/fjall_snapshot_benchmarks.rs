@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use probablistic_rs::{
+use probabilistic_rs::{
     ExpiringBloomFilter, FilterConfigBuilder, FjallFilter,
     FjallFilterConfigBuilder,
 };

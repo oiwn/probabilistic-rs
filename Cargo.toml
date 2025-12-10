@@ -1,18 +1,18 @@
 [package]
-name = "probablistic-rs"
+name = "probabilistic-rs"
 version = "0.4.10"
 edition = "2024"
 authors = ["oiwn"]
-description = "A time-decaying Bloom filter implementation with multiple storage backends"
-repository = "https://github.com/oiwn/probablistic-rs"
-documentation = "https://docs.rs/probablistic-rs"
-homepage = "https://github.com/oiwn/probablistic-rs"
+description = "Probabilistic data structures in Rust"
+repository = "https://github.com/oiwn/probabilistic-rs"
+documentation = "https://docs.rs/probabilistic-rs"
+homepage = "https://github.com/oiwn/probabilistic-rs"
 license = "MIT"
 readme = "README.md"
 keywords = ["bloom-filter", "probabilistic", "time-decay", "cache", "rate-limiting"]
 categories = ["algorithms", "caching", "data-structures"]
 
-default-run = "expblf"
+# default-run = "expblf"
 
 [dependencies]
 bincode = "2"
@@ -42,22 +42,22 @@ async-trait = "0.1"
 
 [dev-dependencies]
 rand = "0.9"
-probablistic-rs = { path = ".", features = ["fjall", "server", "cli"] }
+probabilistic-rs = { path = ".", features = ["fjall", "server", "cli"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 tower = "0.5"
 comfy-table = "7.1"
 colored = "3.0"
 tokio = "1"
 
-[[bin]]
-name = "expblf"
-path = "src/bin/cli.rs"
-required-features = ["fjall", "cli"]
-
-[[bin]]
-name = "expblf-server"
-path = "src/bin/server.rs"
-required-features = ["server", "fjall"]
+# [[bin]]
+# name = "expblf"
+# path = "src/bin/cli.rs"
+# required-features = ["fjall", "cli"]
+#
+# [[bin]]
+# name = "expblf-server"
+# path = "src/bin/server.rs"
+# required-features = ["server", "fjall"]
 
 [package.metadata.docs.rs]
 no-default-features = true
