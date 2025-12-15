@@ -28,7 +28,7 @@ pub trait BulkExpiringBloomFilterOps {
 pub trait ExpiringBloomFilterStats {
     fn capacity_per_level(&self) -> usize;
     fn target_fpr(&self) -> f64;
-    fn total_insert_count(&self) -> usize;
+    fn total_insert_count(&self) -> u64;
     fn active_levels(&self) -> usize;
     fn num_levels(&self) -> usize;
 }

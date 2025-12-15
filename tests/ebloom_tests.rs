@@ -92,7 +92,7 @@ mod basic_operations_tests {
         // Verify total insert count across all levels
         assert_eq!(
             filter.total_insert_count(),
-            test_items.len(),
+            test_items.len() as u64,
             "Total insert count should match"
         );
     }
@@ -114,7 +114,7 @@ mod basic_operations_tests {
 
         assert!(!filter.contains(item1).unwrap());
         assert!(!filter.contains(item2).unwrap());
-        assert_eq!(filter.total_insert_count(), 0);
+        assert_eq!(filter.total_insert_count(), 0u64);
     }
 
     #[test]
@@ -131,7 +131,7 @@ mod basic_operations_tests {
         assert!(filter.contains(item).expect("Contains should succeed"));
 
         // Insert count increases even for duplicates (bloom filter behavior)
-        assert_eq!(filter.total_insert_count(), 5);
+        assert_eq!(filter.total_insert_count(), 5u64);
     }
 
     #[test]
@@ -140,13 +140,13 @@ mod basic_operations_tests {
 
         // Empty filter should not contain any items
         assert!(!filter.contains(b"test").unwrap());
-        assert_eq!(filter.total_insert_count(), 0);
+        assert_eq!(filter.total_insert_count(), 0u64);
 
         // Clear on empty filter should work
         filter
             .clear()
             .expect("Clear should succeed on empty filter");
-        assert_eq!(filter.total_insert_count(), 0);
+        assert_eq!(filter.total_insert_count(), 0u64);
     }
 }
 
@@ -254,7 +254,7 @@ mod configuration_and_stats_tests {
         assert_eq!(filter.target_fpr(), 0.01);
         assert_eq!(filter.num_levels(), 3);
         assert_eq!(filter.active_levels(), 3);
-        assert_eq!(filter.total_insert_count(), 0);
+        assert_eq!(filter.total_insert_count(), 0u64);
 
         // Insert some items
         for i in 0..10 {

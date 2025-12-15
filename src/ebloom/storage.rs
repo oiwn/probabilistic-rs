@@ -1,12 +1,13 @@
 use crate::ebloom::config::{ExpiringFilterConfig, LevelMetadata};
 use crate::ebloom::error::EbloomError;
 use async_trait::async_trait;
+use bincode;
 use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, EbloomError>;
 
 /// Storage backend trait for expiring bloom filter persistence
-#[cfg_attr(feature = "fjall", async_trait)]
+#[async_trait]
 pub trait ExpiringStorageBackend {
     /// Save the expiring filter configuration
     async fn save_config(&self, config: &ExpiringFilterConfig) -> Result<()>;
@@ -15,7 +16,8 @@ pub trait ExpiringStorageBackend {
     async fn load_config(&self) -> Result<ExpiringFilterConfig>;
 
     /// Save metadata for all levels
-    async fn save_level_metadata(&self, metadata: &[LevelMetadata]) -> Result<()>;
+    async fn save_level_metadata(&self, metadata: &[LevelMetadata])
+    -> Result<()>;
 
     /// Load metadata for all levels
     async fn load_level_metadata(&self) -> Result<Vec<LevelMetadata>>;
@@ -34,7 +36,10 @@ pub trait ExpiringStorageBackend {
     ) -> Result<()>;
 
     /// Load chunks for a specific level
-    async fn load_level_chunks(&self, level: usize) -> Result<Vec<(usize, Vec<u8>)>>;
+    async fn load_level_chunks(
+        &self,
+        level: usize,
+    ) -> Result<Vec<(usize, Vec<u8>)>>;
 
     /// Save dirty chunks for a specific level
     async fn save_dirty_chunks(
@@ -44,7 +49,10 @@ pub trait ExpiringStorageBackend {
     ) -> Result<()>;
 
     /// Load dirty chunks for a specific level
-    async fn load_dirty_chunks(&self, level: usize) -> Result<Vec<(usize, Vec<u8>)>>;
+    async fn load_dirty_chunks(
+        &self,
+        level: usize,
+    ) -> Result<Vec<(usize, Vec<u8>)>>;
 
     /// Delete all data for a specific level (during rotation)
     async fn delete_level(&self, level: usize) -> Result<()>;
@@ -71,7 +79,7 @@ impl InMemoryExpiringStorage {
     }
 }
 
-#[cfg_attr(feature = "fjall", async_trait)]
+#[async_trait]
 impl ExpiringStorageBackend for InMemoryExpiringStorage {
     async fn save_config(&self, config: &ExpiringFilterConfig) -> Result<()> {
         // In-memory implementation doesn't actually save
@@ -80,13 +88,19 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
     }
 
     async fn load_config(&self) -> Result<ExpiringFilterConfig> {
-        Ok(self.config
+        Ok(self
+            .config
             .as_ref()
-            .ok_or_else(|| EbloomError::ConfigError("No config found".to_string()))?
+            .ok_or_else(|| {
+                EbloomError::ConfigError("No config found".to_string())
+            })?
             .clone())
     }
 
-    async fn save_level_metadata(&self, metadata: &[LevelMetadata]) -> Result<()> {
+    async fn save_level_metadata(
+        &self,
+        metadata: &[LevelMetadata],
+    ) -> Result<()> {
         // In-memory implementation would copy the metadata
         Ok(())
     }
@@ -113,7 +127,10 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
         Ok(())
     }
 
-    async fn load_level_chunks(&self, level: usize) -> Result<Vec<(usize, Vec<u8>)>> {
+    async fn load_level_chunks(
+        &self,
+        level: usize,
+    ) -> Result<Vec<(usize, Vec<u8>)>> {
         Ok(self.level_chunks.get(&level).cloned().unwrap_or_default())
     }
 
@@ -126,7 +143,10 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
         Ok(())
     }
 
-    async fn load_dirty_chunks(&self, level: usize) -> Result<Vec<(usize, Vec<u8>)>> {
+    async fn load_dirty_chunks(
+        &self,
+        level: usize,
+    ) -> Result<Vec<(usize, Vec<u8>)>> {
         Ok(self.dirty_chunks.get(&level).cloned().unwrap_or_default())
     }
 
@@ -187,7 +207,10 @@ impl FjallExpiringBackend {
         for level in 0..max_levels {
             let chunks_partition = Arc::new(
                 keyspace
-                    .open_partition(&format!("level_{level}_chunks"), options.clone())
+                    .open_partition(
+                        &format!("level_{level}_chunks"),
+                        options.clone(),
+                    )
                     .map_err(|e| {
                         EbloomError::StorageError(format!(
                             "Failed to open level {} chunks partition: {e}",
@@ -199,7 +222,10 @@ impl FjallExpiringBackend {
 
             let dirty_partition = Arc::new(
                 keyspace
-                    .open_partition(&format!("level_{level}_dirty"), options.clone())
+                    .open_partition(
+                        &format!("level_{level}_dirty"),
+                        options.clone(),
+                    )
                     .map_err(|e| {
                         EbloomError::StorageError(format!(
                             "Failed to open level {} dirty partition: {e}",
@@ -220,11 +246,17 @@ impl FjallExpiringBackend {
         })
     }
 
-    fn get_chunks_partition(&self, level: usize) -> Option<&Arc<fjall::Partition>> {
+    fn get_chunks_partition(
+        &self,
+        level: usize,
+    ) -> Option<&Arc<fjall::Partition>> {
         self.chunks_partitions.get(level)
     }
 
-    fn get_dirty_partition(&self, level: usize) -> Option<&Arc<fjall::Partition>> {
+    fn get_dirty_partition(
+        &self,
+        level: usize,
+    ) -> Option<&Arc<fjall::Partition>> {
         self.dirty_partitions.get(level)
     }
 }
@@ -244,7 +276,9 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
         self.keyspace
             .persist(fjall::PersistMode::SyncAll)
             .map_err(|e| {
-                EbloomError::StorageError(format!("Failed to persist config: {e}"))
+                EbloomError::StorageError(format!(
+                    "Failed to persist config: {e}"
+                ))
             })?;
 
         Ok(())
@@ -256,21 +290,28 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
                 let config = ExpiringFilterConfig::from_bytes(&config_bytes)?;
                 Ok(config)
             }
-            Ok(None) => Err(EbloomError::ConfigError("Config not found".to_string())),
+            Ok(None) => {
+                Err(EbloomError::ConfigError("Config not found".to_string()))
+            }
             Err(e) => Err(EbloomError::StorageError(format!(
                 "Failed to load config: {e}"
             ))),
         }
     }
 
-    async fn save_level_metadata(&self, metadata: &[LevelMetadata]) -> Result<()> {
+    async fn save_level_metadata(
+        &self,
+        metadata: &[LevelMetadata],
+    ) -> Result<()> {
         // Serialize metadata as bytes (LevelMetadata should implement serialization)
         let metadata_bytes = self.serialize_metadata(metadata)?;
 
         self.metadata_partition
             .insert("level_metadata", metadata_bytes)
             .map_err(|e| {
-                EbloomError::StorageError(format!("Failed to save level metadata: {e}"))
+                EbloomError::StorageError(format!(
+                    "Failed to save level metadata: {e}"
+                ))
             })?;
 
         self.keyspace
@@ -298,18 +339,29 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
     }
 
     async fn save_current_level(&self, current_level: usize) -> Result<()> {
-        let level_bytes = current_level.to_le_bytes();
+        // Store as single byte (u8)
+        if current_level > 255 {
+            return Err(EbloomError::InvalidLevel {
+                level: current_level,
+                max_levels: 255,
+            });
+        }
+        let level_bytes = (current_level as u8).to_le_bytes();
 
         self.config_partition
             .insert("current_level", level_bytes)
             .map_err(|e| {
-                EbloomError::StorageError(format!("Failed to save current level: {e}"))
+                EbloomError::StorageError(format!(
+                    "Failed to save current level: {e}"
+                ))
             })?;
 
         self.keyspace
             .persist(fjall::PersistMode::SyncAll)
             .map_err(|e| {
-                EbloomError::StorageError(format!("Failed to persist current level: {e}"))
+                EbloomError::StorageError(format!(
+                    "Failed to persist current level: {e}"
+                ))
             })?;
 
         Ok(())
@@ -318,18 +370,8 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
     async fn load_current_level(&self) -> Result<usize> {
         match self.config_partition.get("current_level") {
             Ok(Some(level_bytes)) => {
-                if level_bytes.len() >= 8 {
-                    let level = u64::from_le_bytes([
-                        level_bytes[0],
-                        level_bytes[1],
-                        level_bytes[2],
-                        level_bytes[3],
-                        level_bytes[4],
-                        level_bytes[5],
-                        level_bytes[6],
-                        level_bytes[7],
-                    ]) as usize;
-                    Ok(level)
+                if level_bytes.len() >= 1 {
+                    Ok(level_bytes[0] as usize)
                 } else {
                     Err(EbloomError::StorageError(
                         "Invalid current level data".to_string(),
@@ -357,14 +399,12 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
 
         for (chunk_id, chunk_data) in chunks {
             let key = format!("chunk_{chunk_id}");
-            partition
-                .insert(&key, chunk_data)
-                .map_err(|e| {
-                    EbloomError::StorageError(format!(
-                        "Failed to save level {} chunk {}: {e}",
-                        level, chunk_id
-                    ))
-                })?;
+            partition.insert(&key, chunk_data).map_err(|e| {
+                EbloomError::StorageError(format!(
+                    "Failed to save level {} chunk {}: {e}",
+                    level, chunk_id
+                ))
+            })?;
         }
 
         self.keyspace
@@ -379,7 +419,10 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
         Ok(())
     }
 
-    async fn load_level_chunks(&self, level: usize) -> Result<Vec<(usize, Vec<u8>)>> {
+    async fn load_level_chunks(
+        &self,
+        level: usize,
+    ) -> Result<Vec<(usize, Vec<u8>)>> {
         let Some(partition) = self.get_chunks_partition(level) else {
             return Err(EbloomError::InvalidLevel {
                 level,
@@ -424,14 +467,12 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
 
         for (chunk_id, chunk_data) in dirty_chunks {
             let key = format!("dirty_{chunk_id}");
-            partition
-                .insert(&key, chunk_data)
-                .map_err(|e| {
-                    EbloomError::StorageError(format!(
-                        "Failed to save level {} dirty chunk {}: {e}",
-                        level, chunk_id
-                    ))
-                })?;
+            partition.insert(&key, chunk_data).map_err(|e| {
+                EbloomError::StorageError(format!(
+                    "Failed to save level {} dirty chunk {}: {e}",
+                    level, chunk_id
+                ))
+            })?;
         }
 
         self.keyspace
@@ -446,7 +487,10 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
         Ok(())
     }
 
-    async fn load_dirty_chunks(&self, level: usize) -> Result<Vec<(usize, Vec<u8>)>> {
+    async fn load_dirty_chunks(
+        &self,
+        level: usize,
+    ) -> Result<Vec<(usize, Vec<u8>)>> {
         let Some(partition) = self.get_dirty_partition(level) else {
             return Err(EbloomError::InvalidLevel {
                 level,
@@ -501,7 +545,7 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
                     level
                 ))
             })?;
-            
+
             if let Ok(key_str) = std::str::from_utf8(&key) {
                 chunks_partition.remove(key_str).map_err(|e| {
                     EbloomError::StorageError(format!(
@@ -548,42 +592,13 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
 #[cfg(feature = "fjall")]
 impl FjallExpiringBackend {
     fn serialize_metadata(&self, metadata: &[LevelMetadata]) -> Result<Vec<u8>> {
-        // Simple serialization - each LevelMetadata as 24 bytes (3 u64s)
-        let mut bytes = Vec::with_capacity(metadata.len() * 24);
-        for meta in metadata {
-            bytes.extend_from_slice(&meta.created_at.to_le_bytes());
-            bytes.extend_from_slice(&meta.insert_count.to_le_bytes());
-            bytes.extend_from_slice(&meta.last_snapshot_at.to_le_bytes());
-        }
-        Ok(bytes)
+        bincode::encode_to_vec(metadata, bincode::config::standard())
+            .map_err(|e| EbloomError::SerializationError(e.to_string()))
     }
 
     fn deserialize_metadata(&self, bytes: &[u8]) -> Result<Vec<LevelMetadata>> {
-        if bytes.len() % 24 != 0 {
-            return Err(EbloomError::StorageError(
-                "Invalid metadata byte length".to_string(),
-            ));
-        }
-
-        let mut metadata = Vec::new();
-        for chunk in bytes.chunks_exact(24) {
-            let created_at = u64::from_le_bytes([
-                chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
-            ]);
-            let insert_count = usize::from_le_bytes([
-                chunk[8], chunk[9], chunk[10], chunk[11], chunk[12], chunk[13], chunk[14], chunk[15],
-            ]);
-            let last_snapshot_at = u64::from_le_bytes([
-                chunk[16], chunk[17], chunk[18], chunk[19], chunk[20], chunk[21], chunk[22], chunk[23],
-            ]);
-
-            metadata.push(LevelMetadata {
-                created_at,
-                insert_count,
-                last_snapshot_at,
-            });
-        }
-
-        Ok(metadata)
+        bincode::decode_from_slice(bytes, bincode::config::standard())
+            .map(|(metadata, _)| metadata)
+            .map_err(|e| EbloomError::SerializationError(e.to_string()))
     }
 }

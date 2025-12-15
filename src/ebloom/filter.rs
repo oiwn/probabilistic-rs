@@ -106,9 +106,14 @@ impl ExpiringBloomFilter {
 
         // Setup dirty chunks if persistence enabled
         let (chunk_size_bytes, dirty_chunks) = if config.persistence.is_some() {
-            let chunk_size = config.persistence.as_ref().unwrap().chunk_size_bytes;
-            let chunk_count = (bit_vector_size + chunk_size * 8 - 1).div_ceil(chunk_size * 8);
-            (chunk_size, Some(Arc::new(RwLock::new(bitvec![0; chunk_count]))))
+            let chunk_size =
+                config.persistence.as_ref().unwrap().chunk_size_bytes;
+            let chunk_count =
+                (bit_vector_size + chunk_size * 8 - 1).div_ceil(chunk_size * 8);
+            (
+                chunk_size,
+                Some(Arc::new(RwLock::new(bitvec![0; chunk_count]))),
+            )
         } else {
             (0, None)
         };
@@ -153,7 +158,8 @@ impl ExpiringBloomFilter {
             let backend = FjallExpiringBackend::new(
                 pers.db_path.clone(),
                 config.num_levels,
-            ).await?;
+            )
+            .await?;
 
             // Save initial config
             backend.save_config(&config).await?;
@@ -182,7 +188,8 @@ impl ExpiringBloomFilter {
             config,
             #[cfg(feature = "fjall")]
             storage,
-        ).await
+        )
+        .await
     }
 
     /// Load existing filter from DB
@@ -191,9 +198,9 @@ impl ExpiringBloomFilter {
         use crate::ebloom::storage::ExpiringStorageBackend;
 
         if !db_path.exists() {
-            return Err(EbloomError::StorageError(
-                format!("Database does not exist at {db_path:?}")
-            ));
+            return Err(EbloomError::StorageError(format!(
+                "Database does not exist at {db_path:?}"
+            )));
         }
 
         // Load config first to get num_levels
@@ -202,7 +209,8 @@ impl ExpiringBloomFilter {
         drop(temp_backend);
 
         // Create backend with correct num_levels
-        let backend = FjallExpiringBackend::new(db_path, config.num_levels).await?;
+        let backend =
+            FjallExpiringBackend::new(db_path, config.num_levels).await?;
 
         // Build filter
         let mut filter = Self::build_filter(config, Some(backend)).await?;
@@ -338,7 +346,9 @@ impl ExpiringBloomFilter {
             let dirty_chunks = self.extract_dirty_chunks()?;
 
             if !dirty_chunks.is_empty() {
-                backend.save_dirty_chunks(current_idx, &dirty_chunks).await?;
+                backend
+                    .save_dirty_chunks(current_idx, &dirty_chunks)
+                    .await?;
 
                 // Update last_snapshot_at
                 let now_ms = SystemTime::now()
@@ -348,7 +358,9 @@ impl ExpiringBloomFilter {
 
                 let updated_metadata = {
                     let mut metadata = self.metadata.write().map_err(|_| {
-                        EbloomError::LockError("Failed to write metadata".to_string())
+                        EbloomError::LockError(
+                            "Failed to write metadata".to_string(),
+                        )
                     })?;
                     metadata[current_idx].last_snapshot_at = now_ms;
                     metadata.clone()
@@ -426,7 +438,8 @@ impl ExpiringBloomFilter {
         })?;
 
         let chunk_size_bits = self.chunk_size_bytes * 8;
-        let num_chunks = (self.bit_vector_size + chunk_size_bits - 1).div_ceil(chunk_size_bits);
+        let num_chunks = (self.bit_vector_size + chunk_size_bits - 1)
+            .div_ceil(chunk_size_bits);
 
         let mut chunks = Vec::new();
         for chunk_id in 0..num_chunks {
@@ -694,7 +707,7 @@ impl ExpiringBloomFilterStats for ExpiringBloomFilter {
         self.config.target_fpr
     }
 
-    fn total_insert_count(&self) -> usize {
+    fn total_insert_count(&self) -> u64 {
         let metadata = self.metadata.read().unwrap();
         metadata.iter().map(|m| m.insert_count).sum()
     }
