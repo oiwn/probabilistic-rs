@@ -1,6 +1,6 @@
 use crate::ebloom::config::{ExpiringFilterConfig, LevelMetadata};
 use crate::ebloom::error::{EbloomError, Result};
-use crate::ebloom::traits::{ExpiringBloomFilterOps, ExpiringBloomFilterStats};
+use crate::ebloom::traits::{BulkExpiringBloomFilterOps, ExpiringBloomFilterOps, ExpiringBloomFilterStats};
 use crate::hash::{
     default_hash_function, optimal_bit_vector_size, optimal_num_hashes,
 };
@@ -552,28 +552,101 @@ fn reconstruct_level_from_chunks(
     Ok(())
 }
 
+/// Helper function to insert an item into the filter with already-held locks
+fn insert_internal(
+    item: &[u8],
+    current_level_idx: usize,
+    num_hashes: usize,
+    bit_vector_size: usize,
+    chunk_size_bytes: usize,
+    dirty: Option<&mut BitVec<usize, Lsb0>>,
+    levels: &mut [BitVec<usize, Lsb0>],
+) -> Result<()> {
+    // Calculate hash indices
+    let indices =
+        default_hash_function(item, num_hashes, bit_vector_size);
+
+    // Mark dirty chunks (if dirty tracker provided)
+    if let Some(dirty_bits) = dirty {
+        for &idx in &indices {
+            let chunk_id = (idx as usize) / (chunk_size_bytes * 8);
+            if chunk_id < dirty_bits.len() {
+                dirty_bits.set(chunk_id, true);
+            }
+        }
+    }
+
+    // Insert into current level only
+    if let Some(current_level) = levels.get_mut(current_level_idx) {
+        for idx in indices {
+            let idx = idx as usize;
+            if idx >= bit_vector_size {
+                return Err(EbloomError::IndexOutOfBounds {
+                    index: idx,
+                    capacity: bit_vector_size,
+                });
+            }
+            current_level.set(idx, true);
+        }
+    }
+
+    Ok(())
+}
+
+/// Helper function to check if an item exists with already-held lock
+fn contains_internal(
+    item: &[u8],
+    num_hashes: usize,
+    bit_vector_size: usize,
+    levels: &[BitVec<usize, Lsb0>],
+) -> Result<bool> {
+    // Calculate hash indices
+    let indices =
+        default_hash_function(item, num_hashes, bit_vector_size);
+
+    // Check all levels
+    for level in levels.iter() {
+        let mut all_bits_set = true;
+
+        for idx in &indices {
+            let idx = *idx as usize;
+            if idx >= bit_vector_size {
+                return Err(EbloomError::IndexOutOfBounds {
+                    index: idx,
+                    capacity: bit_vector_size,
+                });
+            }
+
+            if !level[idx] {
+                all_bits_set = false;
+                break;
+            }
+        }
+
+        // If found in any level, return true
+        if all_bits_set {
+            return Ok(true);
+        }
+    }
+
+    // Not found in any level
+    Ok(false)
+}
+
 #[async_trait::async_trait]
 impl ExpiringBloomFilterOps for ExpiringBloomFilter {
     fn insert(&self, item: &[u8]) -> Result<()> {
         // Get the current level index
         let current_level_idx = self.current_level.load(Ordering::Relaxed);
 
-        // Calculate hash indices
-        let indices =
-            default_hash_function(item, self.num_hashes, self.bit_vector_size);
-
         // Mark dirty chunks (if persistence enabled)
-        if let Some(ref dirty_chunks_arc) = self.dirty_chunks {
-            let mut dirty = dirty_chunks_arc.write().map_err(|_| {
+        let mut dirty_guard = if let Some(ref dirty_chunks_arc) = self.dirty_chunks {
+            Some(dirty_chunks_arc.write().map_err(|_| {
                 EbloomError::LockError("Failed to write dirty chunks".to_string())
-            })?;
-            for &idx in &indices {
-                let chunk_id = (idx as usize) / (self.chunk_size_bytes * 8);
-                if chunk_id < dirty.len() {
-                    dirty.set(chunk_id, true);
-                }
-            }
-        }
+            })?)
+        } else {
+            None
+        };
 
         // Get write lock on levels
         let mut levels = self.levels.write().map_err(|_| {
@@ -582,19 +655,16 @@ impl ExpiringBloomFilterOps for ExpiringBloomFilter {
             )
         })?;
 
-        // Insert into current level only
-        if let Some(current_level) = levels.get_mut(current_level_idx) {
-            for idx in indices {
-                let idx = idx as usize;
-                if idx >= self.bit_vector_size {
-                    return Err(EbloomError::IndexOutOfBounds {
-                        index: idx,
-                        capacity: self.bit_vector_size,
-                    });
-                }
-                current_level.set(idx, true);
-            }
-        }
+        // Perform the insertion
+        insert_internal(
+            item,
+            current_level_idx,
+            self.num_hashes,
+            self.bit_vector_size,
+            self.chunk_size_bytes,
+            dirty_guard.as_deref_mut(),
+            &mut levels,
+        )?;
 
         // Update metadata for current level
         let mut metadata = self.metadata.write().map_err(|_| {
@@ -610,10 +680,6 @@ impl ExpiringBloomFilterOps for ExpiringBloomFilter {
     }
 
     fn contains(&self, item: &[u8]) -> Result<bool> {
-        // Calculate hash indices
-        let indices =
-            default_hash_function(item, self.num_hashes, self.bit_vector_size);
-
         // Get read lock on levels
         let levels = self.levels.read().map_err(|_| {
             EbloomError::LockError(
@@ -621,33 +687,7 @@ impl ExpiringBloomFilterOps for ExpiringBloomFilter {
             )
         })?;
 
-        // Check all non-expired levels (iterate through all levels)
-        for level in levels.iter() {
-            let mut all_bits_set = true;
-
-            for idx in &indices {
-                let idx = *idx as usize;
-                if idx >= self.bit_vector_size {
-                    return Err(EbloomError::IndexOutOfBounds {
-                        index: idx,
-                        capacity: self.bit_vector_size,
-                    });
-                }
-
-                if !level[idx] {
-                    all_bits_set = false;
-                    break;
-                }
-            }
-
-            // If found in any level, return true
-            if all_bits_set {
-                return Ok(true);
-            }
-        }
-
-        // Not found in any level
-        Ok(false)
+        contains_internal(item, self.num_hashes, self.bit_vector_size, &levels)
     }
 
     fn clear(&self) -> Result<()> {
@@ -718,5 +758,74 @@ impl ExpiringBloomFilterStats for ExpiringBloomFilter {
 
     fn num_levels(&self) -> usize {
         self.config.num_levels
+    }
+}
+
+impl BulkExpiringBloomFilterOps for ExpiringBloomFilter {
+    fn insert_bulk(&self, items: &[&[u8]]) -> Result<()> {
+        // Get the current level index
+        let current_level_idx = self.current_level.load(Ordering::Relaxed);
+
+        // Mark dirty chunks (if persistence enabled)
+        let mut dirty_guard = if let Some(ref dirty_chunks_arc) = self.dirty_chunks {
+            Some(dirty_chunks_arc.write().map_err(|_| {
+                EbloomError::LockError("Failed to write dirty chunks".to_string())
+            })?)
+        } else {
+            None
+        };
+
+        // Get write lock on levels
+        let mut levels = self.levels.write().map_err(|_| {
+            EbloomError::LockError(
+                "Failed to acquire write lock on levels".to_string(),
+            )
+        })?;
+
+        // Perform all insertions with single lock
+        for item in items {
+            insert_internal(
+                item,
+                current_level_idx,
+                self.num_hashes,
+                self.bit_vector_size,
+                self.chunk_size_bytes,
+                dirty_guard.as_deref_mut(),
+                &mut levels,
+            )?;
+        }
+
+        // Update metadata for current level with total count
+        let mut metadata = self.metadata.write().map_err(|_| {
+            EbloomError::LockError(
+                "Failed to acquire write lock on metadata".to_string(),
+            )
+        })?;
+        if let Some(meta) = metadata.get_mut(current_level_idx) {
+            meta.insert_count += items.len() as u64;
+        }
+
+        Ok(())
+    }
+
+    fn contains_bulk(&self, items: &[&[u8]]) -> Result<Vec<bool>> {
+        // Get read lock on levels once
+        let levels = self.levels.read().map_err(|_| {
+            EbloomError::LockError(
+                "Failed to acquire read lock on levels".to_string(),
+            )
+        })?;
+
+        // Check all items with single lock
+        let mut results = Vec::with_capacity(items.len());
+        for item in items {
+            results.push(contains_internal(
+                item,
+                self.num_hashes,
+                self.bit_vector_size,
+                &levels,
+            )?);
+        }
+        Ok(results)
     }
 }

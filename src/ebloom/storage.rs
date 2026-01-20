@@ -81,7 +81,7 @@ impl InMemoryExpiringStorage {
 
 #[async_trait]
 impl ExpiringStorageBackend for InMemoryExpiringStorage {
-    async fn save_config(&self, config: &ExpiringFilterConfig) -> Result<()> {
+    async fn save_config(&self, _config: &ExpiringFilterConfig) -> Result<()> {
         // In-memory implementation doesn't actually save
         // In a real implementation, this would serialize the config
         Ok(())
@@ -99,7 +99,7 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
 
     async fn save_level_metadata(
         &self,
-        metadata: &[LevelMetadata],
+        _metadata: &[LevelMetadata],
     ) -> Result<()> {
         // In-memory implementation would copy the metadata
         Ok(())
@@ -109,7 +109,7 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
         Ok(self.metadata.clone())
     }
 
-    async fn save_current_level(&self, current_level: usize) -> Result<()> {
+    async fn save_current_level(&self, _current_level: usize) -> Result<()> {
         // In-memory implementation would store this
         Ok(())
     }
@@ -120,8 +120,8 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
 
     async fn save_level_chunks(
         &self,
-        level: usize,
-        chunks: &[(usize, Vec<u8>)],
+        _level: usize,
+        _chunks: &[(usize, Vec<u8>)],
     ) -> Result<()> {
         // In-memory implementation would store these chunks
         Ok(())
@@ -136,8 +136,8 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
 
     async fn save_dirty_chunks(
         &self,
-        level: usize,
-        dirty_chunks: &[(usize, Vec<u8>)],
+        _level: usize,
+        _dirty_chunks: &[(usize, Vec<u8>)],
     ) -> Result<()> {
         // In-memory implementation would store these chunks
         Ok(())
@@ -150,7 +150,7 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
         Ok(self.dirty_chunks.get(&level).cloned().unwrap_or_default())
     }
 
-    async fn delete_level(&self, level: usize) -> Result<()> {
+    async fn delete_level(&self, _level: usize) -> Result<()> {
         // In-memory implementation would remove level data
         Ok(())
     }
