@@ -67,6 +67,12 @@ pub struct InMemoryExpiringStorage {
     dirty_chunks: std::collections::HashMap<usize, Vec<(usize, Vec<u8>)>>,
 }
 
+impl Default for InMemoryExpiringStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryExpiringStorage {
     pub fn new() -> Self {
         Self {
@@ -370,7 +376,7 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
     async fn load_current_level(&self) -> Result<usize> {
         match self.config_partition.get("current_level") {
             Ok(Some(level_bytes)) => {
-                if level_bytes.len() >= 1 {
+                if !level_bytes.is_empty() {
                     Ok(level_bytes[0] as usize)
                 } else {
                     Err(EbloomError::StorageError(

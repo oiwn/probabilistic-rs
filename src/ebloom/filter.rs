@@ -464,37 +464,41 @@ impl ExpiringBloomFilter {
             let current_idx = backend.load_current_level().await?;
             self.current_level.store(current_idx, Ordering::Relaxed);
 
-            // Load metadata
+            // Load all data from DB first (no locks held)
             let loaded_metadata = backend.load_level_metadata().await?;
-            let mut metadata = self.metadata.write().map_err(|_| {
-                EbloomError::LockError("Failed to write metadata".to_string())
-            })?;
-            *metadata = loaded_metadata;
-            drop(metadata);
 
             // Load all N levels from DB
-            let mut levels = self.levels.write().map_err(|_| {
-                EbloomError::LockError("Failed to write levels".to_string())
-            })?;
-
+            let mut loaded_levels_data = Vec::new();
             for level_idx in 0..self.config.num_levels {
                 // Try dirty chunks first, fallback to full chunks
                 let dirty_chunks = backend.load_dirty_chunks(level_idx).await?;
                 if !dirty_chunks.is_empty() {
-                    reconstruct_level_from_chunks(
-                        &mut levels[level_idx],
-                        &dirty_chunks,
-                        self.chunk_size_bytes,
-                    )?;
+                    loaded_levels_data.push((level_idx, dirty_chunks));
                 } else {
                     let chunks = backend.load_level_chunks(level_idx).await?;
-                    if !chunks.is_empty() {
-                        reconstruct_level_from_chunks(
-                            &mut levels[level_idx],
-                            &chunks,
-                            self.chunk_size_bytes,
-                        )?;
-                    }
+                    loaded_levels_data.push((level_idx, chunks));
+                }
+            }
+
+            // Now acquire locks and write data (no await points)
+            {
+                let mut metadata = self.metadata.write().map_err(|_| {
+                    EbloomError::LockError("Failed to write metadata".to_string())
+                })?;
+                *metadata = loaded_metadata;
+            }
+
+            let mut levels = self.levels.write().map_err(|_| {
+                EbloomError::LockError("Failed to write levels".to_string())
+            })?;
+
+            for (level_idx, chunks) in loaded_levels_data {
+                if !chunks.is_empty() {
+                    reconstruct_level_from_chunks(
+                        &mut levels[level_idx],
+                        &chunks,
+                        self.chunk_size_bytes,
+                    )?;
                 }
             }
         }

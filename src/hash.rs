@@ -146,6 +146,7 @@ pub fn optimal_num_hashes(n: usize, m: usize) -> usize {
 ///
 /// Returns:
 /// The adjusted per-level false positive rate
+#[allow(dead_code)]
 pub fn calculate_level_fpr(
     target_fpr: f64,
     num_levels: usize,
@@ -170,6 +171,7 @@ pub fn calculate_level_fpr(
 ///
 /// Returns:
 /// A tuple containing (adjusted_level_fpr, optimal_bit_vector_size, optimal_num_hashes)
+#[allow(dead_code)]
 pub fn calculate_optimal_params(
     capacity: usize,
     target_fpr: f64,
