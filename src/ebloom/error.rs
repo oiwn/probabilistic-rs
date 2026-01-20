@@ -40,6 +40,7 @@ impl From<String> for EbloomError {
 }
 
 // Conversion from serde_json::Error to EbloomError
+#[cfg(feature = "server")]
 impl From<serde_json::Error> for EbloomError {
     fn from(err: serde_json::Error) -> Self {
         EbloomError::SerializationError(err.to_string())
