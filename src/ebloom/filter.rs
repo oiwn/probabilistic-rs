@@ -1,6 +1,8 @@
 use crate::ebloom::config::{ExpiringFilterConfig, LevelMetadata};
 use crate::ebloom::error::{EbloomError, Result};
-use crate::ebloom::traits::{BulkExpiringBloomFilterOps, ExpiringBloomFilterOps, ExpiringBloomFilterStats};
+use crate::ebloom::traits::{
+    BulkExpiringBloomFilterOps, ExpiringBloomFilterOps, ExpiringBloomFilterStats,
+};
 use crate::hash::{
     default_hash_function, optimal_bit_vector_size, optimal_num_hashes,
 };
@@ -567,8 +569,7 @@ fn insert_internal(
     levels: &mut [BitVec<usize, Lsb0>],
 ) -> Result<()> {
     // Calculate hash indices
-    let indices =
-        default_hash_function(item, num_hashes, bit_vector_size);
+    let indices = default_hash_function(item, num_hashes, bit_vector_size);
 
     // Mark dirty chunks (if dirty tracker provided)
     if let Some(dirty_bits) = dirty {
@@ -605,8 +606,7 @@ fn contains_internal(
     levels: &[BitVec<usize, Lsb0>],
 ) -> Result<bool> {
     // Calculate hash indices
-    let indices =
-        default_hash_function(item, num_hashes, bit_vector_size);
+    let indices = default_hash_function(item, num_hashes, bit_vector_size);
 
     // Check all levels
     for level in levels.iter() {
@@ -644,7 +644,9 @@ impl ExpiringBloomFilterOps for ExpiringBloomFilter {
         let current_level_idx = self.current_level.load(Ordering::Relaxed);
 
         // Mark dirty chunks (if persistence enabled)
-        let mut dirty_guard = if let Some(ref dirty_chunks_arc) = self.dirty_chunks {
+        let mut dirty_guard = if let Some(ref dirty_chunks_arc) =
+            self.dirty_chunks
+        {
             Some(dirty_chunks_arc.write().map_err(|_| {
                 EbloomError::LockError("Failed to write dirty chunks".to_string())
             })?)
@@ -771,7 +773,9 @@ impl BulkExpiringBloomFilterOps for ExpiringBloomFilter {
         let current_level_idx = self.current_level.load(Ordering::Relaxed);
 
         // Mark dirty chunks (if persistence enabled)
-        let mut dirty_guard = if let Some(ref dirty_chunks_arc) = self.dirty_chunks {
+        let mut dirty_guard = if let Some(ref dirty_chunks_arc) =
+            self.dirty_chunks
+        {
             Some(dirty_chunks_arc.write().map_err(|_| {
                 EbloomError::LockError("Failed to write dirty chunks".to_string())
             })?)

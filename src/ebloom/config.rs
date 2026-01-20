@@ -31,21 +31,29 @@ pub struct ExpiringFilterConfig {
 impl ExpiringFilterConfig {
     pub fn validate(&self) -> Result<()> {
         if self.capacity_per_level == 0 {
-            return Err(EbloomError::InvalidConfig("Capacity per level must be greater than 0".to_string()));
+            return Err(EbloomError::InvalidConfig(
+                "Capacity per level must be greater than 0".to_string(),
+            ));
         }
         if self.target_fpr <= 0.0 || self.target_fpr >= 1.0 {
-            return Err(
-                EbloomError::InvalidConfig("Target false positive rate must be between 0 and 1".to_string())
-            );
+            return Err(EbloomError::InvalidConfig(
+                "Target false positive rate must be between 0 and 1".to_string(),
+            ));
         }
         if self.level_duration.as_millis() == 0 {
-            return Err(EbloomError::InvalidConfig("Level duration must be greater than 0".to_string()));
+            return Err(EbloomError::InvalidConfig(
+                "Level duration must be greater than 0".to_string(),
+            ));
         }
         if self.num_levels == 0 {
-            return Err(EbloomError::InvalidConfig("Number of levels must be greater than 0".to_string()));
+            return Err(EbloomError::InvalidConfig(
+                "Number of levels must be greater than 0".to_string(),
+            ));
         }
         if self.num_levels > 255 {
-            return Err(EbloomError::InvalidConfig("Number of levels must be <= 255".to_string()));
+            return Err(EbloomError::InvalidConfig(
+                "Number of levels must be <= 255".to_string(),
+            ));
         }
         Ok(())
     }
