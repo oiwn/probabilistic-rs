@@ -1,4 +1,4 @@
-use expiring_bloom_rs::bloom::{
+use probabilistic_rs::bloom::{
     BloomFilter, BloomFilterConfigBuilder, BloomFilterOps, BloomFilterStats,
 };
 use std::{
@@ -681,6 +681,349 @@ mod integration_tests {
         assert!(
             query_duration.as_millis() < 100,
             "10K queries should complete within 100ms"
+        );
+    }
+}
+
+#[cfg(test)]
+mod bulk_operations_tests {
+    use super::*;
+    use probabilistic_rs::bloom::BulkBloomFilterOps;
+
+    #[test]
+    fn test_bulk_insert_empty() {
+        let filter = create_test_filter(1000, 0.01);
+
+        // Empty input should succeed
+        let empty_items: Vec<&[u8]> = vec![];
+        filter
+            .insert_bulk(&empty_items)
+            .expect("Empty bulk insert should succeed");
+
+        assert_eq!(
+            filter.insert_count(),
+            0,
+            "Empty bulk insert should not change insert count"
+        );
+    }
+
+    #[test]
+    fn test_bulk_insert_single_item() {
+        let filter = create_test_filter(1000, 0.01);
+
+        let items: Vec<&[u8]> = vec![b"single_item"];
+        filter
+            .insert_bulk(&items)
+            .expect("Single item bulk insert should succeed");
+
+        assert_eq!(filter.insert_count(), 1, "Insert count should be 1");
+        assert!(
+            filter
+                .contains(b"single_item")
+                .expect("Item should be found"),
+            "Single item should be found"
+        );
+    }
+
+    #[test]
+    fn test_bulk_insert_multiple_items() {
+        let filter = create_test_filter(1000, 0.01);
+
+        let items: Vec<&[u8]> =
+            vec![b"item1", b"item2", b"item3", b"item4", b"item5"];
+        filter
+            .insert_bulk(&items)
+            .expect("Multiple items bulk insert should succeed");
+
+        assert_eq!(filter.insert_count(), 5, "Insert count should be 5");
+
+        // All items should be found
+        for item in &items {
+            assert!(
+                filter.contains(item).expect("Item should be found"),
+                "Item should be found: {:?}",
+                String::from_utf8_lossy(item)
+            );
+        }
+    }
+
+    #[test]
+    fn test_bulk_contains_empty() {
+        let filter = create_test_filter(1000, 0.01);
+
+        let empty_items: Vec<&[u8]> = vec![];
+        let results = filter
+            .contains_bulk(&empty_items)
+            .expect("Empty bulk contains should succeed");
+
+        assert!(
+            results.is_empty(),
+            "Results should be empty for empty input"
+        );
+    }
+
+    #[test]
+    fn test_bulk_contains_single_item() {
+        let filter = create_test_filter(1000, 0.01);
+
+        // Insert item first
+        filter.insert(b"test_item").expect("Insert should succeed");
+
+        let items: Vec<&[u8]> = vec![b"test_item"];
+        let results = filter
+            .contains_bulk(&items)
+            .expect("Single item bulk contains should succeed");
+
+        assert_eq!(results.len(), 1, "Should have one result");
+        assert!(results[0], "Item should be found");
+    }
+
+    #[test]
+    fn test_bulk_contains_mixed_results() {
+        let filter = create_test_filter(1000, 0.01);
+
+        // Insert some items
+        let inserted_items: Vec<&[u8]> = vec![b"item1", b"item2", b"item3"];
+        for item in &inserted_items {
+            filter.insert(item).expect("Insert should succeed");
+        }
+
+        // Test mix of inserted and non-inserted items
+        let test_items: Vec<&[u8]> =
+            vec![b"item1", b"item2", b"item4", b"item5", b"item3"];
+        let results = filter
+            .contains_bulk(&test_items)
+            .expect("Bulk contains should succeed");
+
+        assert_eq!(results.len(), 5, "Should have 5 results");
+        assert_eq!(
+            results,
+            vec![true, true, false, false, true],
+            "Results should match expected pattern"
+        );
+    }
+
+    #[test]
+    fn test_bulk_operations_consistency() {
+        let filter = create_test_filter(1000, 0.01);
+
+        let items: Vec<&[u8]> = vec![b"a", b"b", b"c", b"d", b"e"];
+
+        // Insert using bulk
+        filter
+            .insert_bulk(&items)
+            .expect("Bulk insert should succeed");
+
+        // Check using bulk
+        let bulk_results = filter
+            .contains_bulk(&items)
+            .expect("Bulk contains should succeed");
+
+        // Check using individual operations
+        let individual_results: Vec<bool> = items
+            .iter()
+            .map(|item| {
+                filter
+                    .contains(item)
+                    .expect("Individual contains should succeed")
+            })
+            .collect();
+
+        assert_eq!(
+            bulk_results, individual_results,
+            "Bulk and individual operations should produce same results"
+        );
+    }
+
+    #[test]
+    fn test_bulk_insert_large_batch() {
+        let filter = create_test_filter(10_000, 0.01);
+
+        // Generate large batch
+        let large_batch: Vec<Vec<u8>> = (0..1000)
+            .map(|i| format!("large_batch_item_{:04}", i).into_bytes())
+            .collect();
+
+        let batch_refs: Vec<&[u8]> =
+            large_batch.iter().map(|item| item.as_slice()).collect();
+
+        filter
+            .insert_bulk(&batch_refs)
+            .expect("Large batch insert should succeed");
+
+        assert_eq!(filter.insert_count(), 1000, "Insert count should be 1000");
+
+        // Verify all items are found
+        let results = filter
+            .contains_bulk(&batch_refs)
+            .expect("Large batch contains should succeed");
+        let found_count = results.iter().filter(|&&exists| exists).count();
+
+        assert_eq!(found_count, 1000, "All 1000 items should be found");
+    }
+
+    #[test]
+    fn test_bulk_operations_with_duplicates() {
+        let filter = create_test_filter(1000, 0.01);
+
+        let items_with_duplicates: Vec<&[u8]> =
+            vec![b"item1", b"item2", b"item1", b"item3", b"item2"];
+        filter
+            .insert_bulk(&items_with_duplicates)
+            .expect("Bulk insert with duplicates should succeed");
+
+        // Insert count should reflect all insertions (including duplicates)
+        assert_eq!(
+            filter.insert_count(),
+            5,
+            "Insert count should include duplicates"
+        );
+
+        // All items should be found
+        let results = filter
+            .contains_bulk(&items_with_duplicates)
+            .expect("Bulk contains should succeed");
+        assert!(
+            results.iter().all(|&exists| exists),
+            "All items (including duplicates) should be found"
+        );
+    }
+
+    #[test]
+    fn test_bulk_operations_performance_comparison() {
+        let filter_bulk = create_test_filter(10_000, 0.01);
+        let filter_individual = create_test_filter(10_000, 0.01);
+
+        // Use larger batch size for more meaningful performance comparison
+        let test_items: Vec<Vec<u8>> = (0..1000)
+            .map(|i| format!("perf_test_item_{:04}", i).into_bytes())
+            .collect();
+
+        let test_refs: Vec<&[u8]> =
+            test_items.iter().map(|item| item.as_slice()).collect();
+
+        // Time bulk operations
+        let bulk_insert_start = std::time::Instant::now();
+        filter_bulk
+            .insert_bulk(&test_refs)
+            .expect("Bulk insert should succeed");
+        let bulk_insert_duration = bulk_insert_start.elapsed();
+
+        let bulk_query_start = std::time::Instant::now();
+        let bulk_results = filter_bulk
+            .contains_bulk(&test_refs)
+            .expect("Bulk query should succeed");
+        let bulk_query_duration = bulk_query_start.elapsed();
+
+        // Time individual operations
+        let individual_insert_start = std::time::Instant::now();
+        for item in &test_refs {
+            filter_individual
+                .insert(item)
+                .expect("Individual insert should succeed");
+        }
+        let individual_insert_duration = individual_insert_start.elapsed();
+
+        let individual_query_start = std::time::Instant::now();
+        let mut individual_results = Vec::with_capacity(test_items.len());
+        for item in &test_refs {
+            individual_results.push(
+                filter_individual
+                    .contains(item)
+                    .expect("Individual query should succeed"),
+            );
+        }
+        let individual_query_duration = individual_query_start.elapsed();
+
+        // Verify correctness
+        assert_eq!(
+            bulk_results, individual_results,
+            "Bulk and individual operations should produce same results"
+        );
+
+        println!(
+            "Performance comparison - Bulk insert: {:?}, Individual insert: {:?}, Bulk query: {:?}, Individual query: {:?}",
+            bulk_insert_duration,
+            individual_insert_duration,
+            bulk_query_duration,
+            individual_query_duration
+        );
+
+        // For small batches, bulk operations might be slightly slower due to overhead
+        // But they should still be reasonably close in performance
+        let insert_ratio = bulk_insert_duration.as_nanos() as f64
+            / individual_insert_duration.as_nanos() as f64;
+        let query_ratio = bulk_query_duration.as_nanos() as f64
+            / individual_query_duration.as_nanos() as f64;
+
+        println!(
+            "Performance ratios - Insert: {:.2}x, Query: {:.2}x",
+            insert_ratio, query_ratio
+        );
+
+        // Bulk operations should be within reasonable bounds (not significantly slower)
+        assert!(
+            insert_ratio < 2.0,
+            "Bulk insert should not be more than 2x slower than individual inserts"
+        );
+        assert!(
+            query_ratio < 2.0,
+            "Bulk query should not be more than 2x slower than individual queries"
+        );
+    }
+
+    #[test]
+    fn test_bulk_operations_concurrent() {
+        let filter = Arc::new(create_test_filter(10_000, 0.01));
+        let mut handles = vec![];
+
+        // Spawn multiple threads performing bulk operations
+        for thread_id in 0..4 {
+            let filter_clone = Arc::clone(&filter);
+
+            let handle = thread::spawn(move || {
+                let thread_items: Vec<Vec<u8>> = (0..100)
+                    .map(|i| {
+                        format!("thread_{}_item_{:03}", thread_id, i).into_bytes()
+                    })
+                    .collect();
+
+                let thread_refs: Vec<&[u8]> =
+                    thread_items.iter().map(|item| item.as_slice()).collect();
+
+                // Bulk insert
+                filter_clone
+                    .insert_bulk(&thread_refs)
+                    .expect("Concurrent bulk insert should succeed");
+
+                // Bulk query
+                let results = filter_clone
+                    .contains_bulk(&thread_refs)
+                    .expect("Concurrent bulk query should succeed");
+
+                // All items should be found
+                assert!(
+                    results.iter().all(|&exists| exists),
+                    "All thread items should be found"
+                );
+            });
+
+            handles.push(handle);
+        }
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().expect("Thread should complete successfully");
+        }
+
+        // Verify total insert count
+        let final_filter = Arc::try_unwrap(filter)
+            .ok()
+            .expect("Should be able to unwrap Arc");
+        assert_eq!(
+            final_filter.insert_count(),
+            400,
+            "Total insert count should be 400"
         );
     }
 }

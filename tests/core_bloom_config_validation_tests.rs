@@ -1,4 +1,4 @@
-use expiring_bloom_rs::bloom::{
+use probabilistic_rs::bloom::{
     config::{
         BloomFilterConfig, BloomFilterConfigBuilder, PersistenceConfigBuilder,
     },

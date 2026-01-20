@@ -3,7 +3,7 @@ use super::{
     storage::FjallBackend,
 };
 use crate::{
-    bloom::traits::BloomFilterStats,
+    bloom::traits::{BloomFilterStats, BulkBloomFilterOps},
     hash::{default_hash_function, optimal_bit_vector_size, optimal_num_hashes},
 };
 use bitvec::{bitvec, order::Lsb0, vec::BitVec};
@@ -272,32 +272,6 @@ impl BloomFilter {
         bytes
     }
 
-    /* fn extract_chunk_bytes(
-        &self,
-        chunk_id: usize,
-        chunk_size_bits: usize,
-    ) -> Vec<u8> {
-        let start_bit = chunk_id * chunk_size_bits;
-        let end_bit = std::cmp::min(start_bit + chunk_size_bits, self.bits.len());
-
-        // Convert bit range to bytes
-        let chunk_bits = &self.bits[start_bit..end_bit];
-        let mut bytes = Vec::new();
-
-        // Pack bits into bytes (8 bits per byte)
-        for byte_chunk in chunk_bits.chunks(8) {
-            let mut byte = 0u8;
-            for (bit_pos, bit) in byte_chunk.iter().enumerate() {
-                if *bit {
-                    byte |= 1 << bit_pos;
-                }
-            }
-            bytes.push(byte);
-        }
-
-        bytes
-    } */
-
     fn reconstruct_from_chunks(
         &mut self,
         chunks: &[(usize, Vec<u8>)],
@@ -414,5 +388,91 @@ impl BloomFilterOps for BloomFilter {
         bits.fill(false);
         self.insert_count.store(0, Ordering::Relaxed);
         Ok(())
+    }
+}
+
+impl BulkBloomFilterOps for BloomFilter {
+    fn insert_bulk(&self, items: &[&[u8]]) -> BloomResult<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        // Pre-compute all hash indices for all items before acquiring locks
+        let all_indices: Vec<Vec<u32>> = items
+            .iter()
+            .map(|item| {
+                default_hash_function(item, self.num_hashes, self.bit_vector_size)
+            })
+            .collect();
+
+        // Acquire write lock once for all operations
+        let mut bits = self.bits.write().unwrap();
+
+        // Process all items in single lock session
+        for indices in &all_indices {
+            for &idx in indices {
+                let idx = idx as usize;
+                if idx >= self.bit_vector_size {
+                    return Err(BloomError::IndexOutOfBounds {
+                        index: idx,
+                        capacity: self.bit_vector_size,
+                    });
+                }
+
+                // Mark chunk as dirty when setting bits
+                if let Some(ref dirty_chunks_arc) = self.dirty_chunks {
+                    let mut dirty_chunks = dirty_chunks_arc.write().unwrap();
+                    let chunk_id = idx / (self.chunk_size_bytes * 8);
+                    if chunk_id < dirty_chunks.len() {
+                        dirty_chunks.set(chunk_id, true);
+                    }
+                }
+
+                bits.set(idx, true);
+            }
+        }
+
+        // Update insert count atomically with bulk count
+        self.insert_count.fetch_add(items.len(), Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn contains_bulk(&self, items: &[&[u8]]) -> BloomResult<Vec<bool>> {
+        if items.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Pre-compute all hash indices for all items
+        let all_indices: Vec<Vec<u32>> = items
+            .iter()
+            .map(|item| {
+                default_hash_function(item, self.num_hashes, self.bit_vector_size)
+            })
+            .collect();
+
+        // Acquire read lock once for all operations
+        let bits = self.bits.read().unwrap();
+
+        // Process all items in single lock session
+        let mut results = Vec::with_capacity(items.len());
+        for indices in &all_indices {
+            let mut exists = true;
+            for &idx in indices {
+                let idx = idx as usize;
+                if idx >= self.bit_vector_size {
+                    return Err(BloomError::IndexOutOfBounds {
+                        index: idx,
+                        capacity: self.bit_vector_size,
+                    });
+                }
+                if !bits[idx] {
+                    exists = false;
+                    break;
+                }
+            }
+            results.push(exists);
+        }
+
+        Ok(results)
     }
 }

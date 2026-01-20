@@ -1,10 +1,10 @@
 #![allow(clippy::uninlined_format_args)]
 // mod common;
-use expiring_bloom_rs::bloom::{
+use probabilistic_rs::bloom::{
     BloomFilter, BloomFilterConfigBuilder, BloomFilterOps, BloomFilterStats,
-    PersistenceConfigBuilder,
+    BulkBloomFilterOps, PersistenceConfigBuilder,
 };
-use expiring_bloom_rs::common::bits2hr;
+use probabilistic_rs::common::bits2hr;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -386,70 +386,123 @@ async fn bulk_operations_example() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Prepared {} items for bulk operations", bulk_items.len());
 
-    // Note: Bulk operations are not yet implemented in the current core filter
-    // This is a placeholder to show what the API would look like
-    println!("📝 Note: Bulk operations (insert_bulk/contains_bulk) are planned");
-    println!("         but not yet implemented in the core BloomFilter.");
-    println!(
-        "         Current implementation falls back to individual operations:"
-    );
+    // Test bulk insert
+    println!("\n📝 Testing bulk insert...");
+    let start = std::time::Instant::now();
+    filter.insert_bulk(&bulk_refs)?;
+    let bulk_insert_duration = start.elapsed();
 
-    // Individual insertions (current implementation)
+    // Test bulk contains
+    println!("Testing bulk contains...");
+    let start = std::time::Instant::now();
+    let results = filter.contains_bulk(&bulk_refs)?;
+    let bulk_query_duration = start.elapsed();
+    let found_count = results.iter().filter(|&&exists| exists).count();
+
+    // Compare with individual operations
+    println!("\n📊 Performance comparison:");
+
+    // Individual insertions
+    let test_filter = BloomFilter::create(
+        BloomFilterConfigBuilder::default()
+            .capacity(10_000)
+            .false_positive_rate(0.01)
+            .build()?,
+    )
+    .await?;
+
     let start = std::time::Instant::now();
     for item_bytes in &bulk_refs {
-        filter.insert(item_bytes)?;
+        test_filter.insert(item_bytes)?;
     }
-    let insert_duration = start.elapsed();
+    let individual_insert_duration = start.elapsed();
 
-    // Individual queries (current implementation)
+    // Individual queries
     let start = std::time::Instant::now();
-    let mut found_count = 0;
+    let mut individual_found_count = 0;
     for item_bytes in &bulk_refs {
-        if filter.contains(item_bytes)? {
-            found_count += 1;
+        if test_filter.contains(item_bytes)? {
+            individual_found_count += 1;
         }
     }
-    let query_duration = start.elapsed();
+    let individual_query_duration = start.elapsed();
 
-    println!("Performance results (individual operations):");
-    let insert_rate = if insert_duration.as_millis() > 0 {
-        bulk_items.len() as f64 / insert_duration.as_millis() as f64
+    // Calculate rates
+    let bulk_insert_rate = if bulk_insert_duration.as_millis() > 0 {
+        bulk_items.len() as f64 / bulk_insert_duration.as_millis() as f64
     } else {
-        bulk_items.len() as f64 / (insert_duration.as_micros() as f64 / 1000.0)
+        bulk_items.len() as f64
+            / (bulk_insert_duration.as_micros() as f64 / 1000.0)
     };
-    let query_rate = if query_duration.as_millis() > 0 {
-        bulk_items.len() as f64 / query_duration.as_millis() as f64
+    let bulk_query_rate = if bulk_query_duration.as_millis() > 0 {
+        bulk_items.len() as f64 / bulk_query_duration.as_millis() as f64
     } else {
-        bulk_items.len() as f64 / (query_duration.as_micros() as f64 / 1000.0)
+        bulk_items.len() as f64
+            / (bulk_query_duration.as_micros() as f64 / 1000.0)
+    };
+    let individual_insert_rate = if individual_insert_duration.as_millis() > 0 {
+        bulk_items.len() as f64 / individual_insert_duration.as_millis() as f64
+    } else {
+        bulk_items.len() as f64
+            / (individual_insert_duration.as_micros() as f64 / 1000.0)
+    };
+    let individual_query_rate = if individual_query_duration.as_millis() > 0 {
+        bulk_items.len() as f64 / individual_query_duration.as_millis() as f64
+    } else {
+        bulk_items.len() as f64
+            / (individual_query_duration.as_micros() as f64 / 1000.0)
     };
 
+    println!("\n🔧 Bulk Operations:");
     println!(
         "  Insert time: {:?} ({:.1} ops/ms)",
-        insert_duration, insert_rate
+        bulk_insert_duration, bulk_insert_rate
     );
     println!(
         "  Query time:  {:?} ({:.1} ops/ms)",
-        query_duration, query_rate
+        bulk_query_duration, bulk_query_rate
     );
     println!("  Items found: {}/{}", found_count, bulk_items.len());
+
+    println!("\n🔧 Individual Operations:");
+    println!(
+        "  Insert time: {:?} ({:.1} ops/ms)",
+        individual_insert_duration, individual_insert_rate
+    );
+    println!(
+        "  Query time:  {:?} ({:.1} ops/ms)",
+        individual_query_duration, individual_query_rate
+    );
+    println!(
+        "  Items found: {}/{}",
+        individual_found_count,
+        bulk_items.len()
+    );
+
+    println!("\n📈 Performance Improvement:");
+    let insert_speedup = individual_insert_duration.as_nanos() as f64
+        / bulk_insert_duration.as_nanos() as f64;
+    let query_speedup = individual_query_duration.as_nanos() as f64
+        / bulk_query_duration.as_nanos() as f64;
+    println!("  Insert speedup: {:.2}x", insert_speedup);
+    println!("  Query speedup:  {:.2}x", query_speedup);
 
     // Test some items that weren't inserted
     let test_items: Vec<String> = (1000..1010)
         .map(|i| format!("test_item_{:04}", i))
         .collect();
+    let test_refs: Vec<&[u8]> = test_items.iter().map(|s| s.as_bytes()).collect();
 
-    let mut false_positives = 0;
-    for item in &test_items {
-        if filter.contains(item.as_bytes())? {
-            false_positives += 1;
-        }
-    }
+    let test_results = filter.contains_bulk(&test_refs)?;
+    let false_positives = test_results.iter().filter(|&&exists| exists).count();
 
     println!(
-        "  False positives: {}/{} test items",
+        "\n🎯 False positives: {}/{} test items",
         false_positives,
         test_items.len()
     );
+
+    println!("\n✅ Bulk operations implemented and working!");
 
     Ok(())
 }

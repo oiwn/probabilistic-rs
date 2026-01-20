@@ -1,9 +1,9 @@
-# expiring-bloom-rs
+# probabilistic-rs
 
-[![Crates.io](https://img.shields.io/crates/v/expiring-bloom-rs.svg)](https://crates.io/crates/expiring-bloom-rs)
-[![Documentation](https://docs.rs/expiring-bloom-rs/badge.svg)](https://docs.rs/expiring-bloom-rs)
-[![codecov](https://codecov.io/gh/oiwn/expiring-bloom-rs/graph/badge.svg?token=5JMM0V5RFO)](https://codecov.io/gh/oiwn/expiring-bloom-rs)
-[![dependency status](https://deps.rs/repo/github/oiwn/expiring-bloom-rs/status.svg)](https://deps.rs/repo/github/oiwn/expiring-bloom-rs)
+[![Crates.io](https://img.shields.io/crates/v/probabilistic-rs.svg)](https://crates.io/crates/probabilistic-rs)
+[![Documentation](https://docs.rs/probabilistic-rs/badge.svg)](https://docs.rs/probabilistic-rs)
+[![codecov](https://codecov.io/gh/oiwn/probabilistic-rs/graph/badge.svg?token=5JMM0V5RFO)](https://codecov.io/gh/oiwn/probabilistic-rs)
+[![dependency status](https://deps.rs/repo/github/oiwn/probabilistic-rs/status.svg)](https://deps.rs/repo/github/oiwn/probabilistic-rs)
 
 # Time-Decaying Bloom Filter
 
@@ -12,27 +12,57 @@ backends and a high-performance HTTP API server.
 
 ## Overview
 
-This crate provides a Bloom filter implementation that automatically expires
-elements after a configurable time period using a sliding window approach. It's
-particularly useful for rate limiting, caching, and tracking recently seen items
-where older data becomes less relevant over time.
+This crate provides multiple Bloom filter implementations:
+
+1. **Core Bloom Filter** - A high-performance, persistent Bloom filter with bulk operations
+2. **Time-Decaying Bloom Filter** - Automatically expires elements after a configurable time period using a sliding window approach
+
+Perfect for rate limiting, caching, deduplication, and tracking recently seen items where older data becomes less relevant over time.
 
 ![TUI Screenshot](tui.png)
 
 ### Key Features
 
+#### Core Bloom Filter
+- **High-performance bulk operations** - insert and query multiple items with single lock acquisition
+- **Persistent storage** with Fjall backend for durability across restarts
+- **Configurable false positive rate** - tune memory usage vs. accuracy tradeoffs
+- **Thread-safe** with interior mutability for concurrent access
+- **Memory efficient** with optimized bit vector storage
+
+#### Time-Decaying Bloom Filter
 - **Time-based automatic element expiration** - items naturally age out without manual intervention
 - **Multiple storage backends**:
   - In-memory for maximum performance
-  - ReDB persistence for durability across restarts
-- **Configurable false positive rate** - tune memory usage vs. accuracy tradeoffs
+  - Fjall persistence for durability across restarts
 - **Multi-level sliding window design** with timestamp-based expiration
-- **Complete API ecosystem**:
-  - HTTP server with Swagger UI documentation
-  - CLI with interactive TUI mode
-  - Programmatic Rust API
 
-## How It Works
+#### Complete API Ecosystem
+- **HTTP server** with Swagger UI documentation (for expiring bloom)
+- **CLI** with interactive TUI mode
+- **Programmatic Rust API**
+
+## Core Bloom Filter
+
+The core Bloom filter provides a high-performance, persistent implementation with optimized bulk operations.
+
+### Features
+
+- **Bulk Operations**: Insert and query multiple items with single lock acquisition
+- **Persistence**: Optional Fjall backend for durable storage
+- **Thread Safety**: Interior mutability allows concurrent access without external locks
+- **Memory Efficient**: Optimized bit vector storage with configurable chunk sizes
+
+### Bulk Operations Performance
+
+Bulk operations provide significant performance benefits for batch workloads:
+
+- **Single Lock Acquisition**: One lock per bulk operation vs per-item locks
+- **Batch Hash Computation**: All hashes computed before acquiring locks
+- **Reduced Contention**: Minimized lock contention in concurrent scenarios
+- **Memory Efficiency**: Pre-allocated result vectors avoid reallocations
+
+## Time-Decaying Bloom Filter
 
 The time-decaying Bloom filter uses a sliding window approach with the following
 characteristics:
@@ -53,13 +83,81 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-expiring-bloom-rs = "0.2"
+probabilistic-rs = "0.4"
 ```
 
-### Basic Example
+### Core Bloom Filter Example
 
 ```rust
-use expiring_bloom_rs::{FilterConfigBuilder, InMemorySlidingBloomFilter, SlidingBloomFilter};
+use probabilistic_rs::bloom::{
+    BloomFilter, BloomFilterConfigBuilder, BloomFilterOps, BulkBloomFilterOps
+};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create a core Bloom filter
+    let config = BloomFilterConfigBuilder::default()
+        .capacity(10000)
+        .false_positive_rate(0.01)
+        .build()?;
+
+    let filter = BloomFilter::create(config).await?;
+
+    // Individual operations
+    filter.insert(b"item1")?;
+    assert!(filter.contains(b"item1")?);
+
+    // Bulk operations - much faster for multiple items
+    let items: Vec<&[u8]> = vec![b"item2", b"item3", b"item4", b"item5"];
+    filter.insert_bulk(&items)?;
+
+    let results = filter.contains_bulk(&items)?;
+    assert!(results.iter().all(|&exists| exists));
+    
+    Ok(())
+}
+```
+
+### Persistent Core Bloom Filter
+
+```rust
+use probabilistic_rs::bloom::{
+    BloomFilter, BloomFilterConfigBuilder, PersistenceConfigBuilder
+};
+use std::path::PathBuf;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let persistence_config = PersistenceConfigBuilder::default()
+        .db_path(PathBuf::from("my_bloom_db.fjall"))
+        .chunk_size_bytes(4096) // 4KB chunks
+        .build()?;
+
+    let config = BloomFilterConfigBuilder::default()
+        .capacity(100000)
+        .false_positive_rate(0.01)
+        .persistence(Some(persistence_config))
+        .build()?;
+
+    let filter = BloomFilter::create(config).await?;
+
+    // Bulk insert with persistence
+    let bulk_items: Vec<Vec<u8>> = (0..1000)
+        .map(|i| format!("item_{:04}", i).into_bytes())
+        .collect();
+    let bulk_refs: Vec<&[u8]> = bulk_items.iter().map(|item| item.as_slice()).collect();
+    
+    filter.insert_bulk(&bulk_refs)?;
+    filter.save_snapshot().await?;
+    
+    Ok(())
+}
+```
+
+### Time-Decaying Bloom Filter Example
+
+```rust
+use probabilistic_rs::{FilterConfigBuilder, InMemorySlidingBloomFilter, SlidingBloomFilter};
 use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -85,8 +183,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Persistent Filter with Fjall
 
 ```rust
-use expiring_bloom_rs::{
-    ExpiringBloomFilter, FilterConfigBuilder, FjallFilter, FjallFilterConfigBuilder,
+use probabilistic_rs::{    ExpiringBloomFilter, FilterConfigBuilder, FjallFilter, FjallFilterConfigBuilder,
 };
 use std::{path::PathBuf, time::Duration};
 
@@ -124,7 +221,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Using the HTTP Server
 
 ```rust
-use expiring_bloom_rs::{ServerConfigBuilder, FilterConfigBuilder};
+use probabilistic_rs::{ServerConfigBuilder, FilterConfigBuilder};
 use std::time::Duration;
 
 #[tokio::main]
@@ -141,7 +238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     // Start the server
-    expiring_bloom_rs::run_server(server_config).await?;
+    probabilistic_rs::run_server(server_config).await?;
     
     Ok(())
 }
@@ -191,9 +288,30 @@ The filter can be configured with the following parameters:
 
 ## Performance
 
+### Core Bloom Filter Performance
+
+The core Bloom filter is optimized for high-throughput workloads:
+
+#### Bulk Operations Benefits
+- **2-5x faster** insert throughput for large batches (1000+ items)
+- **3-7x faster** query throughput for large batches
+- **Single lock acquisition** vs per-item locks
+- **Batch hash computation** reduces CPU overhead
+
+#### Memory Usage
+
+Memory usage is optimized with bit-level storage:
+
+```
+total_bits = ceil(-capacity * ln(false_positive_rate) / (ln(2)^2))
+memory_bytes = ceil(total_bits / 8)
+```
+
+### Time-Decaying Bloom Filter Performance
+
 Bro, it's 🦀🦀🦀 RUST 🦀🦀🦀 and its BLAZINGLY FAST 🚀🚀🚀
 
-### Memory Usage
+#### Memory Usage
 
 Memory usage is calculated as:
 
