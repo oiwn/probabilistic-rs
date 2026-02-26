@@ -1,7 +1,6 @@
 use crate::ebloom::config::{ExpiringFilterConfig, LevelMetadata};
 use crate::ebloom::error::EbloomError;
 use async_trait::async_trait;
-use bincode;
 use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, EbloomError>;
@@ -598,13 +597,12 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
 #[cfg(feature = "fjall")]
 impl FjallExpiringBackend {
     fn serialize_metadata(&self, metadata: &[LevelMetadata]) -> Result<Vec<u8>> {
-        bincode::encode_to_vec(metadata, bincode::config::standard())
+        postcard::to_allocvec(metadata)
             .map_err(|e| EbloomError::SerializationError(e.to_string()))
     }
 
     fn deserialize_metadata(&self, bytes: &[u8]) -> Result<Vec<LevelMetadata>> {
-        bincode::decode_from_slice(bytes, bincode::config::standard())
-            .map(|(metadata, _)| metadata)
+        postcard::from_bytes(bytes)
             .map_err(|e| EbloomError::SerializationError(e.to_string()))
     }
 }

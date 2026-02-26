@@ -1,7 +1,5 @@
 use thiserror::Error;
 
-use bincode::error::{DecodeError, EncodeError};
-
 pub type Result<T> = std::result::Result<T, EbloomError>;
 pub type EbloomResult<T> = Result<T>; // Alias for backward compatibility
 
@@ -47,16 +45,9 @@ impl From<serde_json::Error> for EbloomError {
     }
 }
 
-// Conversion from bincode::error::EncodeError to EbloomError
-impl From<EncodeError> for EbloomError {
-    fn from(err: EncodeError) -> Self {
-        EbloomError::SerializationError(err.to_string())
-    }
-}
-
-// Conversion from bincode::error::DecodeError to EbloomError
-impl From<DecodeError> for EbloomError {
-    fn from(err: DecodeError) -> Self {
+// Conversion from postcard::Error to EbloomError
+impl From<postcard::Error> for EbloomError {
+    fn from(err: postcard::Error) -> Self {
         EbloomError::SerializationError(err.to_string())
     }
 }

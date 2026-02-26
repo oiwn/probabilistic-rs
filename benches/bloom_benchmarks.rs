@@ -1,7 +1,7 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use probabilistic_rs::{
-    ExpiringBloomFilter, FilterConfigBuilder, InMemoryFilter,
-};
+use probabilistic_rs::ebloom::config::ExpiringFilterConfigBuilder;
+use probabilistic_rs::ebloom::filter::ExpiringBloomFilter;
+use probabilistic_rs::ebloom::traits::ExpiringBloomFilterOps;
 use rand::{Rng, distr::Alphanumeric};
 use std::{time::Duration, time::SystemTime};
 
@@ -19,16 +19,16 @@ fn generate_test_data(count: usize) -> Vec<String> {
     (0..count).map(|_| generate_random_string(32)).collect()
 }
 
-fn create_test_filter(capacity: usize) -> InMemoryFilter {
-    let config = FilterConfigBuilder::default()
-        .capacity(capacity)
-        .false_positive_rate(0.01)
+fn create_test_filter(capacity: usize) -> ExpiringBloomFilter {
+    let config = ExpiringFilterConfigBuilder::default()
+        .capacity_per_level(capacity)
+        .target_fpr(0.01)
         .level_duration(Duration::from_secs(1))
-        .max_levels(5)
+        .num_levels(5usize)
         .build()
         .expect("Failed to create config");
 
-    InMemoryFilter::new(config).expect("Failed to create Bloom filter")
+    ExpiringBloomFilter::new(config).expect("Failed to create Bloom filter")
 }
 
 // Helper to create "expired" timestamps
@@ -63,7 +63,7 @@ fn bench_insert(c: &mut Criterion) {
             |b, (cap, data)| {
                 b.iter_batched(
                     || create_test_filter(*cap),
-                    |mut filter| {
+                    |filter: ExpiringBloomFilter| {
                         for item in data.iter() {
                             if let Err(e) = filter.insert(item.as_bytes()) {
                                 eprintln!("Insert error (continuing): {e}");
@@ -92,7 +92,7 @@ fn bench_query(c: &mut Criterion) {
             BenchmarkId::new("inmemory", capacity),
             &(capacity, &known_data, &unknown_data),
             |b, (cap, known, unknown)| {
-                let mut filter = create_test_filter(*cap);
+                let filter = create_test_filter(*cap);
 
                 // Insert known data
                 for item in known.iter() {
@@ -102,10 +102,10 @@ fn bench_query(c: &mut Criterion) {
                 b.iter(|| {
                     // Query mix of known and unknown
                     for item in known.iter() {
-                        filter.query(item.as_bytes()).unwrap();
+                        filter.contains(item.as_bytes()).unwrap();
                     }
                     for item in unknown.iter() {
-                        filter.query(item.as_bytes()).unwrap();
+                        filter.contains(item.as_bytes()).unwrap();
                     }
                 });
             },

@@ -1,4 +1,3 @@
-use bincode::{Decode, Encode};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -6,14 +5,14 @@ use std::time::Duration;
 
 use crate::ebloom::error::{EbloomError, Result};
 
-#[derive(Debug, Clone, Builder, Serialize, Deserialize, Decode, Encode)]
+#[derive(Debug, Clone, Builder, Serialize, Deserialize)]
 pub struct ExpiringPersistenceConfig {
     pub db_path: PathBuf,
     #[builder(default = "4096")]
     pub chunk_size_bytes: usize,
 }
 
-#[derive(Debug, Clone, Builder, Serialize, Deserialize, Decode, Encode)]
+#[derive(Debug, Clone, Builder, Serialize, Deserialize)]
 #[builder(setter(into))]
 pub struct ExpiringFilterConfig {
     #[builder(default = "1_000_000")]
@@ -59,18 +58,17 @@ impl ExpiringFilterConfig {
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        bincode::encode_to_vec(self, bincode::config::standard())
+        postcard::to_allocvec(self)
             .map_err(|e| EbloomError::SerializationError(e.to_string()))
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        bincode::decode_from_slice(bytes, bincode::config::standard())
-            .map(|(config, _)| config)
+        postcard::from_bytes(bytes)
             .map_err(|e| EbloomError::SerializationError(e.to_string()))
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Decode, Encode)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LevelMetadata {
     pub created_at: u64,
     pub insert_count: u64,

@@ -10,9 +10,14 @@ use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize tracing
+    // Initialize tracing (suppress verbose logs)
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(tracing::Level::WARN)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::new("warn")
+                .add_directive("fjall=off".parse()?)
+                .add_directive("lsm_tree=off".parse()?),
+        )
         .with_target(false)
         .init();
 
