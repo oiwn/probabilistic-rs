@@ -1,7 +1,6 @@
 use crate::ebloom::config::{ExpiringFilterConfig, LevelMetadata};
 use crate::ebloom::error::EbloomError;
 use async_trait::async_trait;
-use bincode;
 use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, EbloomError>;
@@ -88,8 +87,6 @@ impl InMemoryExpiringStorage {
 #[async_trait]
 impl ExpiringStorageBackend for InMemoryExpiringStorage {
     async fn save_config(&self, _config: &ExpiringFilterConfig) -> Result<()> {
-        // In-memory implementation doesn't actually save
-        // In a real implementation, this would serialize the config
         Ok(())
     }
 
@@ -107,7 +104,6 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
         &self,
         _metadata: &[LevelMetadata],
     ) -> Result<()> {
-        // In-memory implementation would copy the metadata
         Ok(())
     }
 
@@ -116,7 +112,6 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
     }
 
     async fn save_current_level(&self, _current_level: usize) -> Result<()> {
-        // In-memory implementation would store this
         Ok(())
     }
 
@@ -129,7 +124,6 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
         _level: usize,
         _chunks: &[(usize, Vec<u8>)],
     ) -> Result<()> {
-        // In-memory implementation would store these chunks
         Ok(())
     }
 
@@ -145,7 +139,6 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
         _level: usize,
         _dirty_chunks: &[(usize, Vec<u8>)],
     ) -> Result<()> {
-        // In-memory implementation would store these chunks
         Ok(())
     }
 
@@ -157,7 +150,6 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
     }
 
     async fn delete_level(&self, _level: usize) -> Result<()> {
-        // In-memory implementation would remove level data
         Ok(())
     }
 }
@@ -165,11 +157,11 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
 /// Fjall storage backend for expiring bloom filters
 #[cfg(feature = "fjall")]
 pub struct FjallExpiringBackend {
-    keyspace: Arc<fjall::Keyspace>,
-    config_partition: Arc<fjall::Partition>,
-    metadata_partition: Arc<fjall::Partition>,
-    chunks_partitions: Vec<Arc<fjall::Partition>>,
-    dirty_partitions: Vec<Arc<fjall::Partition>>,
+    db: Arc<fjall::Database>,
+    config_partition: Arc<fjall::Keyspace>,
+    metadata_partition: Arc<fjall::Keyspace>,
+    chunks_partitions: Vec<Arc<fjall::Keyspace>>,
+    dirty_partitions: Vec<Arc<fjall::Keyspace>>,
     max_levels: usize,
 }
 
@@ -179,16 +171,13 @@ impl FjallExpiringBackend {
         db_path: std::path::PathBuf,
         max_levels: usize,
     ) -> Result<Self> {
-        let config = fjall::Config::new(db_path);
-        let keyspace = Arc::new(config.open().map_err(|e| {
-            EbloomError::StorageError(format!("Failed to open Fjall DB: {e}"))
-        })?);
-
-        let options = fjall::PartitionCreateOptions::default();
+        let db =
+            Arc::new(fjall::Database::builder(&db_path).open().map_err(|e| {
+                EbloomError::StorageError(format!("Failed to open Fjall DB: {e}"))
+            })?);
 
         let config_partition = Arc::new(
-            keyspace
-                .open_partition("expiring_config", options.clone())
+            db.keyspace("expiring_config", fjall::KeyspaceCreateOptions::default)
                 .map_err(|e| {
                     EbloomError::StorageError(format!(
                         "Failed to open config partition: {e}",
@@ -197,8 +186,7 @@ impl FjallExpiringBackend {
         );
 
         let metadata_partition = Arc::new(
-            keyspace
-                .open_partition("level_metadata", options.clone())
+            db.keyspace("level_metadata", fjall::KeyspaceCreateOptions::default)
                 .map_err(|e| {
                     EbloomError::StorageError(format!(
                         "Failed to open metadata partition: {e}"
@@ -206,44 +194,41 @@ impl FjallExpiringBackend {
                 })?,
         );
 
-        // Create partitions for each level's chunks and dirty chunks
         let mut chunks_partitions = Vec::with_capacity(max_levels);
         let mut dirty_partitions = Vec::with_capacity(max_levels);
 
         for level in 0..max_levels {
             let chunks_partition = Arc::new(
-                keyspace
-                    .open_partition(
-                        &format!("level_{level}_chunks"),
-                        options.clone(),
-                    )
-                    .map_err(|e| {
-                        EbloomError::StorageError(format!(
-                            "Failed to open level {} chunks partition: {e}",
-                            level
-                        ))
-                    })?,
+                db.keyspace(
+                    &format!("level_{level}_chunks"),
+                    fjall::KeyspaceCreateOptions::default,
+                )
+                .map_err(|e| {
+                    EbloomError::StorageError(format!(
+                        "Failed to open level {} chunks partition: {e}",
+                        level
+                    ))
+                })?,
             );
             chunks_partitions.push(chunks_partition);
 
             let dirty_partition = Arc::new(
-                keyspace
-                    .open_partition(
-                        &format!("level_{level}_dirty"),
-                        options.clone(),
-                    )
-                    .map_err(|e| {
-                        EbloomError::StorageError(format!(
-                            "Failed to open level {} dirty partition: {e}",
-                            level
-                        ))
-                    })?,
+                db.keyspace(
+                    &format!("level_{level}_dirty"),
+                    fjall::KeyspaceCreateOptions::default,
+                )
+                .map_err(|e| {
+                    EbloomError::StorageError(format!(
+                        "Failed to open level {} dirty partition: {e}",
+                        level
+                    ))
+                })?,
             );
             dirty_partitions.push(dirty_partition);
         }
 
         Ok(Self {
-            keyspace,
+            db,
             config_partition,
             metadata_partition,
             chunks_partitions,
@@ -255,14 +240,11 @@ impl FjallExpiringBackend {
     fn get_chunks_partition(
         &self,
         level: usize,
-    ) -> Option<&Arc<fjall::Partition>> {
+    ) -> Option<&Arc<fjall::Keyspace>> {
         self.chunks_partitions.get(level)
     }
 
-    fn get_dirty_partition(
-        &self,
-        level: usize,
-    ) -> Option<&Arc<fjall::Partition>> {
+    fn get_dirty_partition(&self, level: usize) -> Option<&Arc<fjall::Keyspace>> {
         self.dirty_partitions.get(level)
     }
 }
@@ -279,13 +261,9 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
                 EbloomError::StorageError(format!("Failed to save config: {e}"))
             })?;
 
-        self.keyspace
-            .persist(fjall::PersistMode::SyncAll)
-            .map_err(|e| {
-                EbloomError::StorageError(format!(
-                    "Failed to persist config: {e}"
-                ))
-            })?;
+        self.db.persist(fjall::PersistMode::SyncAll).map_err(|e| {
+            EbloomError::StorageError(format!("Failed to persist config: {e}"))
+        })?;
 
         Ok(())
     }
@@ -309,7 +287,6 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
         &self,
         metadata: &[LevelMetadata],
     ) -> Result<()> {
-        // Serialize metadata as bytes (LevelMetadata should implement serialization)
         let metadata_bytes = self.serialize_metadata(metadata)?;
 
         self.metadata_partition
@@ -320,13 +297,11 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
                 ))
             })?;
 
-        self.keyspace
-            .persist(fjall::PersistMode::SyncAll)
-            .map_err(|e| {
-                EbloomError::StorageError(format!(
-                    "Failed to persist level metadata: {e}"
-                ))
-            })?;
+        self.db.persist(fjall::PersistMode::SyncAll).map_err(|e| {
+            EbloomError::StorageError(format!(
+                "Failed to persist level metadata: {e}"
+            ))
+        })?;
 
         Ok(())
     }
@@ -337,7 +312,7 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
                 let metadata = self.deserialize_metadata(&metadata_bytes)?;
                 Ok(metadata)
             }
-            Ok(None) => Ok(vec![]), // No metadata yet
+            Ok(None) => Ok(vec![]),
             Err(e) => Err(EbloomError::StorageError(format!(
                 "Failed to load level metadata: {e}"
             ))),
@@ -345,7 +320,6 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
     }
 
     async fn save_current_level(&self, current_level: usize) -> Result<()> {
-        // Store as single byte (u8)
         if current_level > 255 {
             return Err(EbloomError::InvalidLevel {
                 level: current_level,
@@ -362,13 +336,11 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
                 ))
             })?;
 
-        self.keyspace
-            .persist(fjall::PersistMode::SyncAll)
-            .map_err(|e| {
-                EbloomError::StorageError(format!(
-                    "Failed to persist current level: {e}"
-                ))
-            })?;
+        self.db.persist(fjall::PersistMode::SyncAll).map_err(|e| {
+            EbloomError::StorageError(format!(
+                "Failed to persist current level: {e}"
+            ))
+        })?;
 
         Ok(())
     }
@@ -384,7 +356,7 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
                     ))
                 }
             }
-            Ok(None) => Ok(0), // Default to level 0
+            Ok(None) => Ok(0),
             Err(e) => Err(EbloomError::StorageError(format!(
                 "Failed to load current level: {e}"
             ))),
@@ -413,14 +385,12 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
             })?;
         }
 
-        self.keyspace
-            .persist(fjall::PersistMode::SyncAll)
-            .map_err(|e| {
-                EbloomError::StorageError(format!(
-                    "Failed to persist level {} chunks: {e}",
-                    level
-                ))
-            })?;
+        self.db.persist(fjall::PersistMode::SyncAll).map_err(|e| {
+            EbloomError::StorageError(format!(
+                "Failed to persist level {} chunks: {e}",
+                level
+            ))
+        })?;
 
         Ok(())
     }
@@ -437,10 +407,9 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
         };
 
         let mut chunks = Vec::new();
-        let iter = partition.iter();
 
-        for item in iter {
-            let (key, value) = item.map_err(|e| {
+        for guard in partition.iter() {
+            let (key, value) = guard.into_inner().map_err(|e| {
                 EbloomError::StorageError(format!(
                     "Failed to read level {} chunk: {e}",
                     level
@@ -481,14 +450,12 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
             })?;
         }
 
-        self.keyspace
-            .persist(fjall::PersistMode::SyncAll)
-            .map_err(|e| {
-                EbloomError::StorageError(format!(
-                    "Failed to persist level {} dirty chunks: {e}",
-                    level
-                ))
-            })?;
+        self.db.persist(fjall::PersistMode::SyncAll).map_err(|e| {
+            EbloomError::StorageError(format!(
+                "Failed to persist level {} dirty chunks: {e}",
+                level
+            ))
+        })?;
 
         Ok(())
     }
@@ -505,10 +472,9 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
         };
 
         let mut chunks = Vec::new();
-        let iter = partition.iter();
 
-        for item in iter {
-            let (key, value) = item.map_err(|e| {
+        for guard in partition.iter() {
+            let (key, value) = guard.into_inner().map_err(|e| {
                 EbloomError::StorageError(format!(
                     "Failed to read level {} dirty chunk: {e}",
                     level
@@ -542,16 +508,18 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
             });
         };
 
-        // Clear all chunks for this level
-        let iter = chunks_partition.iter();
-        for item in iter {
-            let (key, _) = item.map_err(|e| {
+        let mut keys_to_delete_chunks = Vec::new();
+        for guard in chunks_partition.iter() {
+            let (key, _) = guard.into_inner().map_err(|e| {
                 EbloomError::StorageError(format!(
                     "Failed to iterate level {} chunks for deletion: {e}",
                     level
                 ))
             })?;
+            keys_to_delete_chunks.push(key.to_vec());
+        }
 
+        for key in keys_to_delete_chunks {
             if let Ok(key_str) = std::str::from_utf8(&key) {
                 chunks_partition.remove(key_str).map_err(|e| {
                     EbloomError::StorageError(format!(
@@ -562,16 +530,18 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
             }
         }
 
-        // Clear all dirty chunks for this level
-        let iter = dirty_partition.iter();
-        for item in iter {
-            let (key, _) = item.map_err(|e| {
+        let mut keys_to_delete_dirty = Vec::new();
+        for guard in dirty_partition.iter() {
+            let (key, _) = guard.into_inner().map_err(|e| {
                 EbloomError::StorageError(format!(
                     "Failed to iterate level {} dirty chunks for deletion: {e}",
                     level
                 ))
             })?;
+            keys_to_delete_dirty.push(key.to_vec());
+        }
 
+        for key in keys_to_delete_dirty {
             if let Ok(key_str) = std::str::from_utf8(&key) {
                 dirty_partition.remove(key_str).map_err(|e| {
                     EbloomError::StorageError(format!(
@@ -582,14 +552,12 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
             }
         }
 
-        self.keyspace
-            .persist(fjall::PersistMode::SyncAll)
-            .map_err(|e| {
-                EbloomError::StorageError(format!(
-                    "Failed to persist level {} deletion: {e}",
-                    level
-                ))
-            })?;
+        self.db.persist(fjall::PersistMode::SyncAll).map_err(|e| {
+            EbloomError::StorageError(format!(
+                "Failed to persist level {} deletion: {e}",
+                level
+            ))
+        })?;
 
         Ok(())
     }
@@ -598,13 +566,12 @@ impl ExpiringStorageBackend for FjallExpiringBackend {
 #[cfg(feature = "fjall")]
 impl FjallExpiringBackend {
     fn serialize_metadata(&self, metadata: &[LevelMetadata]) -> Result<Vec<u8>> {
-        bincode::encode_to_vec(metadata, bincode::config::standard())
+        postcard::to_allocvec(metadata)
             .map_err(|e| EbloomError::SerializationError(e.to_string()))
     }
 
     fn deserialize_metadata(&self, bytes: &[u8]) -> Result<Vec<LevelMetadata>> {
-        bincode::decode_from_slice(bytes, bincode::config::standard())
-            .map(|(metadata, _)| metadata)
+        postcard::from_bytes(bytes)
             .map_err(|e| EbloomError::SerializationError(e.to_string()))
     }
 }

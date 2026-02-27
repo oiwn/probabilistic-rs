@@ -1,11 +1,3 @@
-#[cfg(not(feature = "fjall"))]
-fn main() {
-    eprintln!(
-        "`bloom_fjall_benchmarks` requires the `fjall` feature. Run with `cargo bench --bench bloom_fjall_benchmarks --features fjall`."
-    );
-}
-
-#[cfg(feature = "fjall")]
 mod fjall_core_bench {
     use std::{
         fs,
@@ -279,8 +271,6 @@ mod fjall_core_bench {
     criterion_group!(fjall_core_bench_group, fjall_incremental_benchmark);
 }
 
-#[cfg(feature = "fjall")]
 use fjall_core_bench::fjall_core_bench_group;
 
-#[cfg(feature = "fjall")]
 criterion::criterion_main!(fjall_core_bench_group);

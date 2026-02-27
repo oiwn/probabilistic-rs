@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 #[cfg(feature = "fjall")]
 pub struct FjallBackend {
-    keyspace: Arc<fjall::Keyspace>,
-    config_partition: Arc<fjall::Partition>,
-    chunks_partition: Arc<fjall::Partition>,
+    db: Arc<fjall::Database>,
+    config_partition: Arc<fjall::Keyspace>,
+    chunks_partition: Arc<fjall::Keyspace>,
 }
 
 #[cfg(feature = "fjall")]
@@ -21,26 +21,20 @@ impl StorageBackend for FjallBackend {
                 BloomError::StorageError(format!("Failed to save config: {e}"))
             })?;
 
-        // Ensure config is persisted to disk
-        self.keyspace
-            .persist(fjall::PersistMode::SyncAll)
-            .map_err(|e| {
-                BloomError::StorageError(format!("Failed to persist config: {e}"))
-            })?;
+        self.db.persist(fjall::PersistMode::SyncAll).map_err(|e| {
+            BloomError::StorageError(format!("Failed to persist config: {e}"))
+        })?;
 
         Ok(())
     }
 
     async fn load_config(&self) -> BloomResult<BloomFilterConfig> {
         match self.config_partition.get("bloom_config") {
-            // Config exists and was read successfully
             Ok(Some(config_bytes)) => {
                 let config = BloomFilterConfig::from_bytes(&config_bytes)?;
                 Ok(config)
             }
-            // Config key doesn't exist in storage
             Ok(None) => Err(BloomError::ConfigNotFound),
-            // Storage/IO error occurred while trying to read
             Err(e) => Err(BloomError::StorageError(format!(
                 "Failed to load config: {e}"
             ))),
@@ -60,12 +54,9 @@ impl StorageBackend for FjallBackend {
                 })?;
         }
 
-        // Persist to disk
-        self.keyspace
-            .persist(fjall::PersistMode::SyncAll)
-            .map_err(|e| {
-                BloomError::StorageError(format!("Failed to persist chunks: {e}"))
-            })?;
+        self.db.persist(fjall::PersistMode::SyncAll).map_err(|e| {
+            BloomError::StorageError(format!("Failed to persist chunks: {e}"))
+        })?;
 
         Ok(())
     }
@@ -73,15 +64,11 @@ impl StorageBackend for FjallBackend {
     async fn load_snapshot(&self) -> BloomResult<Vec<(usize, Vec<u8>)>> {
         let mut chunks = Vec::new();
 
-        // Get iterator (no error handling here - iter() doesn't return Result)
-        let iter = self.chunks_partition.iter();
-
-        for item in iter {
-            let (key, value) = item.map_err(|e| {
+        for guard in self.chunks_partition.iter() {
+            let (key, value) = guard.into_inner().map_err(|e| {
                 BloomError::StorageError(format!("Failed to read chunk: {e}"))
             })?;
 
-            // Parse chunk_id from key "chunk_123"
             if let Some(chunk_id_str) = key.strip_prefix(b"chunk_")
                 && let Ok(chunk_id_str) = std::str::from_utf8(chunk_id_str)
                 && let Ok(chunk_id) = chunk_id_str.parse::<usize>()
@@ -93,7 +80,6 @@ impl StorageBackend for FjallBackend {
         if chunks.is_empty() {
             Ok(vec![])
         } else {
-            // Sort chunks by ID for consistent ordering
             chunks.sort_by_key(|(id, _)| *id);
             Ok(chunks)
         }
@@ -103,16 +89,13 @@ impl StorageBackend for FjallBackend {
 #[cfg(feature = "fjall")]
 impl FjallBackend {
     pub async fn new(db_path: std::path::PathBuf) -> BloomResult<Self> {
-        let config = fjall::Config::new(db_path);
-        let keyspace = Arc::new(config.open().map_err(|e| {
-            BloomError::StorageError(format!("Failed to open Fjall DB: {e}"))
-        })?);
-
-        let options = fjall::PartitionCreateOptions::default();
+        let db =
+            Arc::new(fjall::Database::builder(&db_path).open().map_err(|e| {
+                BloomError::StorageError(format!("Failed to open Fjall DB: {e}"))
+            })?);
 
         let config_partition = Arc::new(
-            keyspace
-                .open_partition("config", options.clone())
+            db.keyspace("config", fjall::KeyspaceCreateOptions::default)
                 .map_err(|e| {
                     BloomError::StorageError(format!(
                         "Failed to open config partition: {e}",
@@ -121,15 +104,16 @@ impl FjallBackend {
         );
 
         let chunks_partition = Arc::new(
-            keyspace.open_partition("chunks", options).map_err(|e| {
-                BloomError::StorageError(format!(
-                    "Failed to open chunks partition: {e}"
-                ))
-            })?,
+            db.keyspace("chunks", fjall::KeyspaceCreateOptions::default)
+                .map_err(|e| {
+                    BloomError::StorageError(format!(
+                        "Failed to open chunks partition: {e}"
+                    ))
+                })?,
         );
 
         Ok(Self {
-            keyspace,
+            db,
             config_partition,
             chunks_partition,
         })

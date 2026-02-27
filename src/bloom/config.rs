@@ -1,10 +1,9 @@
 use super::{BloomError, BloomResult};
-use bincode::{Decode, Encode};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
 
-#[derive(Clone, Debug, Builder, Serialize, Deserialize, Decode, Encode)]
+#[derive(Clone, Debug, Builder, Serialize, Deserialize)]
 #[builder(pattern = "owned")]
 pub struct BloomFilterConfig {
     #[builder(default = "1_000_000")]
@@ -17,7 +16,7 @@ pub struct BloomFilterConfig {
     pub persistence: Option<PersistenceConfig>,
 }
 
-#[derive(Builder, Clone, Debug, Serialize, Deserialize, Decode, Encode)]
+#[derive(Builder, Clone, Debug, Serialize, Deserialize)]
 pub struct PersistenceConfig {
     pub db_path: PathBuf,
     #[builder(default = "Duration::from_secs(60)")]
@@ -44,13 +43,12 @@ impl BloomFilterConfig {
     }
 
     pub fn to_bytes(&self) -> BloomResult<Vec<u8>> {
-        bincode::encode_to_vec(self, bincode::config::standard())
+        postcard::to_allocvec(self)
             .map_err(|e| BloomError::SerializationError(e.to_string()))
     }
 
     pub fn from_bytes(bytes: &[u8]) -> BloomResult<Self> {
-        bincode::decode_from_slice(bytes, bincode::config::standard())
-            .map(|(config, _)| config)
+        postcard::from_bytes(bytes)
             .map_err(|e| BloomError::SerializationError(e.to_string()))
     }
 }

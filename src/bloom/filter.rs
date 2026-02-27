@@ -157,18 +157,18 @@ impl BloomFilter {
         let bits = Arc::new(RwLock::new(bitvec![0; bit_vector_size]));
 
         // Setup chunking if persistence enabled
-        let (chunk_size_bytes, dirty_chunks) = if config.persistence.is_some() {
-            let chunk_size =
-                config.persistence.as_ref().unwrap().chunk_size_bytes;
-            let chunk_count =
-                (bit_vector_size + chunk_size * 8 - 1).div_ceil(chunk_size * 8);
-            (
-                chunk_size,
-                Some(Arc::new(RwLock::new(bitvec![0; chunk_count]))),
-            )
-        } else {
-            (0, None)
-        };
+        let (chunk_size_bytes, dirty_chunks) =
+            if let Some(persistence) = &config.persistence {
+                let chunk_size = persistence.chunk_size_bytes;
+                let chunk_count = (bit_vector_size + chunk_size * 8 - 1)
+                    .div_ceil(chunk_size * 8);
+                (
+                    chunk_size,
+                    Some(Arc::new(RwLock::new(bitvec![0; chunk_count]))),
+                )
+            } else {
+                (0, None)
+            };
 
         Ok(Self {
             config,

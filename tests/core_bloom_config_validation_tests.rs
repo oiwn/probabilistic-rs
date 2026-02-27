@@ -693,15 +693,18 @@ mod error_recovery_tests {
         let original = BloomFilterConfigBuilder::default().build().unwrap();
 
         // Serialize it
-        let mut bytes = original.to_bytes().unwrap();
+        let bytes = original.to_bytes().unwrap();
 
-        // Corrupt the serialized data
-        if !bytes.is_empty() {
-            bytes[0] = bytes[0].wrapping_add(1); // Change first byte
-        }
+        // Create corrupted data by truncating or appending garbage
+        // Postcard is more resilient to single-byte changes, so we use truncation
+        let corrupted = if bytes.len() > 2 {
+            &bytes[..bytes.len() / 2]
+        } else {
+            &[0xFF, 0xFF, 0xFF, 0xFF] // Garbage data for very short sequences
+        };
 
         // Attempt to deserialize
-        let result = BloomFilterConfig::from_bytes(&bytes);
+        let result = BloomFilterConfig::from_bytes(corrupted);
 
         // Should fail gracefully with SerializationError
         assert!(result.is_err());
