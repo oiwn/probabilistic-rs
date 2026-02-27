@@ -1,6 +1,6 @@
 [package]
 name = "probabilistic-rs"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 authors = ["oiwn"]
 description = "Probabilistic data structures in Rust"
@@ -15,7 +15,7 @@ categories = ["algorithms", "caching", "data-structures"]
 # default-run = "expblf"
 
 [dependencies]
-postcard = { version = "1.1.3", features = ["alloc"] }
+postcard = { version = "1", features = ["alloc"] }
 fnv = "1"
 murmur3 = "0.5"
 thiserror = "2"
@@ -37,7 +37,7 @@ clap = { version = "4.5", features = ["derive"], optional = true }
 ratatui = { version = "0.29", optional = true }
 unicode-width = { version = "0.2", optional = true }
 # fjall
-fjall = { version = "2.8", optional = true }
+fjall = { version = "3", optional = true }
 async-trait = "0.1"
 
 [dev-dependencies]
@@ -86,11 +86,4 @@ harness = false
 [[bench]]
 name = "bloom_fjall_benchmarks"
 harness = false
-
-[[bench]]
-name = "fjall_snapshot_benchmarks"
-harness = false
-
-[[bench]]
-name = "storage_benchmarks"
-harness = false
+required-features = ["fjall"]
