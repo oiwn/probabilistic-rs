@@ -87,3 +87,12 @@ harness = false
 name = "bloom_fjall_benchmarks"
 harness = false
 required-features = ["fjall"]
+
+[[bench]]
+name = "ebloom_benchmarks"
+harness = false
+
+[[bench]]
+name = "ebloom_fjall_benchmarks"
+harness = false
+required-features = ["fjall"]
