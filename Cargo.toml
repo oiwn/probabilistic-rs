@@ -53,15 +53,10 @@ comfy-table = "7.1"
 colored = "3.0"
 tokio = "1"
 
-# [[bin]]
-# name = "expblf"
-# path = "src/bin/cli.rs"
-# required-features = ["fjall", "cli"]
-#
-# [[bin]]
-# name = "expblf-server"
-# path = "src/bin/server.rs"
-# required-features = ["server", "fjall"]
+[[bin]]
+name = "probabilistic-server"
+path = "src/bin/server.rs"
+required-features = ["server"]
 
 [package.metadata.docs.rs]
 no-default-features = true
