@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -21,7 +21,10 @@ impl ApiError {
         }
     }
 
-    pub fn with_details(error: impl Into<String>, details: impl Into<String>) -> Self {
+    pub fn with_details(
+        error: impl Into<String>,
+        details: impl Into<String>,
+    ) -> Self {
         Self {
             error: error.into(),
             details: Some(details.into()),
@@ -42,7 +45,9 @@ impl IntoResponse for ApiError {
         let status = match self.error.as_str() {
             e if e.contains("not found") => StatusCode::NOT_FOUND,
             e if e.contains("already exists") => StatusCode::CONFLICT,
-            e if e.contains("invalid") || e.contains("missing") => StatusCode::BAD_REQUEST,
+            e if e.contains("invalid") || e.contains("missing") => {
+                StatusCode::BAD_REQUEST
+            }
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, Json(self)).into_response()

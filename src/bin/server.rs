@@ -9,7 +9,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     dotenvy::dotenv().ok();
 
-    let addr = std::env::var("SERVER_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".to_string());
+    let addr = std::env::var("SERVER_ADDR")
+        .unwrap_or_else(|_| "0.0.0.0:3000".to_string());
     let state = AppState::new();
 
     tracing::info!("Starting server on {}", addr);

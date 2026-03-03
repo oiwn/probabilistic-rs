@@ -1,12 +1,12 @@
 #[cfg(feature = "server")]
 mod server {
     use axum::{
+        Router,
         body::Body,
         http::{Method, Request, StatusCode},
-        Router,
     };
-    use probabilistic_rs::server::{create_router, AppState};
-    use serde::{de::DeserializeOwned, Deserialize};
+    use probabilistic_rs::server::{AppState, create_router};
+    use serde::{Deserialize, de::DeserializeOwned};
     use tower::ServiceExt;
 
     fn test_router() -> Router<()> {
@@ -156,7 +156,8 @@ mod server {
 
         // Delete
         let (status, body) =
-            send_request(router, Method::DELETE, "/api/v1/bloom/to_delete", None).await;
+            send_request(router, Method::DELETE, "/api/v1/bloom/to_delete", None)
+                .await;
 
         assert_eq!(status, StatusCode::OK);
         let resp: MessageResponse = parse_json(body.unwrap().as_str());
@@ -167,8 +168,13 @@ mod server {
     async fn delete_bloom_filter_not_found() {
         let router = test_router();
 
-        let (status, body) =
-            send_request(router, Method::DELETE, "/api/v1/bloom/nonexistent", None).await;
+        let (status, body) = send_request(
+            router,
+            Method::DELETE,
+            "/api/v1/bloom/nonexistent",
+            None,
+        )
+        .await;
 
         assert_eq!(status, StatusCode::NOT_FOUND);
         let err: ApiError = parse_json(body.unwrap().as_str());
@@ -324,7 +330,8 @@ mod server {
         .await;
 
         // List
-        let (status, body) = send_request(router, Method::GET, "/api/v1/bloom/list", None).await;
+        let (status, body) =
+            send_request(router, Method::GET, "/api/v1/bloom/list", None).await;
         assert_eq!(status, StatusCode::OK);
         let resp: FilterListResponse = parse_json(body.unwrap().as_str());
         assert!(resp.filters.contains(&"filter1".to_string()));
@@ -368,8 +375,13 @@ mod server {
         .await;
 
         // Stats
-        let (status, body) =
-            send_request(router, Method::GET, "/api/v1/bloom/stats_test/stats", None).await;
+        let (status, body) = send_request(
+            router,
+            Method::GET,
+            "/api/v1/bloom/stats_test/stats",
+            None,
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         let resp: BloomStatsResponse = parse_json(body.unwrap().as_str());
         assert_eq!(resp.capacity, 5000);
@@ -557,8 +569,13 @@ mod server {
         .await;
 
         // Stats
-        let (status, body) =
-            send_request(router, Method::GET, "/api/v1/ebloom/ebloom_stats/stats", None).await;
+        let (status, body) = send_request(
+            router,
+            Method::GET,
+            "/api/v1/ebloom/ebloom_stats/stats",
+            None,
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         let resp: EbloomStatsResponse = parse_json(body.unwrap().as_str());
         assert_eq!(resp.capacity_per_level, 5000);

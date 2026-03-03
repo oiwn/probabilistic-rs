@@ -55,11 +55,17 @@ pub fn create_router(state: AppState) -> Router {
     Router::new()
         .nest("/api/v1/bloom", routes::bloom::router())
         .nest("/api/v1/ebloom", routes::ebloom::router())
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .merge(
+            SwaggerUi::new("/swagger-ui")
+                .url("/api-docs/openapi.json", ApiDoc::openapi()),
+        )
         .with_state(state)
 }
 
-pub async fn run_server(state: AppState, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_server(
+    state: AppState,
+    addr: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let app = create_router(state);
     axum::serve(listener, app).await?;

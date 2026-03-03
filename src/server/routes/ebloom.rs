@@ -1,7 +1,7 @@
 use axum::{
+    Json, Router,
     extract::{Path, State},
     routing::{delete, get, post},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -9,8 +9,8 @@ use std::time::Duration;
 use utoipa::ToSchema;
 
 use crate::ebloom::{
-    ExpiringBloomFilter, ExpiringBloomFilterOps, ExpiringBloomFilterStats,
-    BulkExpiringBloomFilterOps, ExpiringFilterConfigBuilder,
+    BulkExpiringBloomFilterOps, ExpiringBloomFilter, ExpiringBloomFilterOps,
+    ExpiringBloomFilterStats, ExpiringFilterConfigBuilder,
 };
 use crate::server::error::{ApiError, ApiResult};
 use crate::server::state::AppState;
@@ -108,7 +108,9 @@ pub async fn create_filter(
         .build()
         .map_err(|e| ApiError::with_details("Invalid config", e.to_string()))?;
 
-    let filter = ExpiringBloomFilter::create(config).await.map_err(ApiError::from)?;
+    let filter = ExpiringBloomFilter::create(config)
+        .await
+        .map_err(ApiError::from)?;
     eblooms.insert(req.name.clone(), Arc::new(filter));
 
     Ok(Json(MessageResponse {
@@ -195,7 +197,9 @@ pub async fn contains(
         .get(&name)
         .ok_or_else(|| ApiError::not_found("Expiring bloom filter", &name))?;
 
-    let present = filter.contains(req.item.as_bytes()).map_err(ApiError::from)?;
+    let present = filter
+        .contains(req.item.as_bytes())
+        .map_err(ApiError::from)?;
 
     Ok(Json(ContainsResponse { present }))
 }
@@ -325,7 +329,9 @@ pub async fn stats(
         (status = 200, description = "List of filters", body = FilterListResponse)
     )
 )]
-pub async fn list_filters(State(state): State<AppState>) -> Json<FilterListResponse> {
+pub async fn list_filters(
+    State(state): State<AppState>,
+) -> Json<FilterListResponse> {
     let eblooms = state.eblooms.read().await;
     let filters: Vec<String> = eblooms.keys().cloned().collect();
     Json(FilterListResponse { filters })

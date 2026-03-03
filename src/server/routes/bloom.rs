@@ -1,13 +1,16 @@
 use axum::{
+    Json, Router,
     extract::{Path, State},
     routing::{delete, get, post},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use utoipa::ToSchema;
 
-use crate::bloom::{BloomFilter, BloomFilterConfigBuilder, BloomFilterOps, BloomFilterStats, BulkBloomFilterOps};
+use crate::bloom::{
+    BloomFilter, BloomFilterConfigBuilder, BloomFilterOps, BloomFilterStats,
+    BulkBloomFilterOps,
+};
 use crate::server::error::{ApiError, ApiResult};
 use crate::server::state::AppState;
 
@@ -183,7 +186,9 @@ pub async fn contains(
         .get(&name)
         .ok_or_else(|| ApiError::not_found("Bloom filter", &name))?;
 
-    let present = filter.contains(req.item.as_bytes()).map_err(ApiError::from)?;
+    let present = filter
+        .contains(req.item.as_bytes())
+        .map_err(ApiError::from)?;
 
     Ok(Json(ContainsResponse { present }))
 }
@@ -311,7 +316,9 @@ pub async fn stats(
         (status = 200, description = "List of filters", body = FilterListResponse)
     )
 )]
-pub async fn list_filters(State(state): State<AppState>) -> Json<FilterListResponse> {
+pub async fn list_filters(
+    State(state): State<AppState>,
+) -> Json<FilterListResponse> {
     let blooms = state.blooms.read().await;
     let filters: Vec<String> = blooms.keys().cloned().collect();
     Json(FilterListResponse { filters })
