@@ -32,6 +32,9 @@ pub mod common;
 pub mod ebloom;
 mod hash;
 
+#[cfg(feature = "python")]
+mod python;
+
 pub use bloom::error::{BloomError, BloomResult};
 pub use ebloom::error::{EbloomError, EbloomResult};
 pub use hash::{

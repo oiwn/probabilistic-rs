@@ -14,6 +14,9 @@ categories = ["algorithms", "caching", "data-structures"]
 
 # default-run = "expblf"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 postcard = { version = "1", features = ["alloc"] }
 fnv = "1"
@@ -24,17 +27,18 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing = "0.1"
 bitvec = "1"
 serde = { version = "1", features = ["derive"] }
+pyo3 = { version = "0.28", features = ["extension-module"], optional = true }
 
 # server
 dotenvy = { version = "0.15", optional = true }
 axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
-utoipa = { version = "5.3", features = ["axum_extras"], optional = true }
+utoipa = { version = "5.4", features = ["axum_extras"], optional = true }
 utoipa-swagger-ui = { version = "9", features = ["axum"], optional = true }
 serde_json = { version = "1", optional = true }
 # cli
 clap = { version = "4.5", features = ["derive"], optional = true }
-ratatui = { version = "0.29", optional = true }
+ratatui = { version = "0.30", optional = true }
 unicode-width = { version = "0.2", optional = true }
 # fjall
 fjall = { version = "3", optional = true }
@@ -71,6 +75,7 @@ fjall = ["dep:fjall"]
 server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde_json", "dep:dotenvy", "fjall"]
 cli = ["dep:clap", "dep:ratatui", "dep:unicode-width", "fjall"]
 tests = []
+python = ["dep:pyo3", "dep:tokio"]
 
 [package.metadata.docs]
 features = ["cli", "fjall"]  # Exclude "server" feature
@@ -85,14 +90,5 @@ harness = false
 
 [[bench]]
 name = "bloom_fjall_benchmarks"
-harness = false
-required-features = ["fjall"]
-
-[[bench]]
-name = "ebloom_benchmarks"
-harness = false
-
-[[bench]]
-name = "ebloom_fjall_benchmarks"
 harness = false
 required-features = ["fjall"]
