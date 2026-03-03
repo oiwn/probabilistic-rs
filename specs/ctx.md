@@ -6,8 +6,8 @@ Working to bring this crate to the release.
 
 - [x] python bindings
 - [x] rest api
+- [x] integration tests
 - [ ] python package
-- [ ] integration tests
 
 ---
 
