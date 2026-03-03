@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
+use crate::BloomError;
+use crate::EbloomError;
 use crate::bloom::{
     BloomFilter, BloomFilterConfigBuilder, BloomFilterOps, BloomFilterStats,
     BulkBloomFilterOps, PersistenceConfigBuilder,
@@ -14,8 +16,6 @@ use crate::ebloom::filter::ExpiringBloomFilter;
 use crate::ebloom::traits::{
     BulkExpiringBloomFilterOps, ExpiringBloomFilterOps, ExpiringBloomFilterStats,
 };
-use crate::BloomError;
-use crate::EbloomError;
 
 fn get_runtime() -> Arc<Runtime> {
     std::sync::OnceLock::new()
@@ -66,7 +66,9 @@ impl PyBloomFilter {
             .capacity(capacity)
             .false_positive_rate(false_positive_rate)
             .build()
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(e.to_string())
+            })?;
 
         let rt = get_runtime();
         let inner = rt.block_on(BloomFilter::create(config))?;
@@ -75,18 +77,26 @@ impl PyBloomFilter {
     }
 
     #[staticmethod]
-    fn create(db_path: &str, capacity: usize, false_positive_rate: f64) -> PyResult<Self> {
+    fn create(
+        db_path: &str,
+        capacity: usize,
+        false_positive_rate: f64,
+    ) -> PyResult<Self> {
         let persistence = PersistenceConfigBuilder::default()
             .db_path(PathBuf::from(db_path))
             .build()
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(e.to_string())
+            })?;
 
         let config = BloomFilterConfigBuilder::default()
             .capacity(capacity)
             .false_positive_rate(false_positive_rate)
             .persistence(Some(persistence))
             .build()
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(e.to_string())
+            })?;
 
         let rt = get_runtime();
         let inner = rt.block_on(BloomFilter::create(config))?;
@@ -167,7 +177,9 @@ impl PyExpiringBloomFilter {
             .level_duration(std::time::Duration::from_secs(level_duration_secs))
             .num_levels(num_levels)
             .build()
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(e.to_string())
+            })?;
 
         let rt = get_runtime();
         let inner = rt.block_on(ExpiringBloomFilter::create(config))?;
@@ -186,7 +198,9 @@ impl PyExpiringBloomFilter {
         let persistence = ExpiringPersistenceConfigBuilder::default()
             .db_path(PathBuf::from(db_path))
             .build()
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(e.to_string())
+            })?;
 
         let config = ExpiringFilterConfigBuilder::default()
             .capacity_per_level(capacity_per_level)
@@ -195,7 +209,9 @@ impl PyExpiringBloomFilter {
             .num_levels(num_levels)
             .persistence(Some(persistence))
             .build()
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(e.to_string())
+            })?;
 
         let rt = get_runtime();
         let inner = rt.block_on(ExpiringBloomFilter::create(config))?;
@@ -206,7 +222,8 @@ impl PyExpiringBloomFilter {
     #[staticmethod]
     fn load(db_path: &str) -> PyResult<Self> {
         let rt = get_runtime();
-        let inner = rt.block_on(ExpiringBloomFilter::load(PathBuf::from(db_path)))?;
+        let inner =
+            rt.block_on(ExpiringBloomFilter::load(PathBuf::from(db_path)))?;
 
         Ok(Self { inner, rt })
     }
