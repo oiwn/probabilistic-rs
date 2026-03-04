@@ -1,6 +1,6 @@
 [package]
 name = "probabilistic-rs"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2024"
 authors = ["oiwn"]
 description = "Probabilistic data structures in Rust"
@@ -85,5 +85,14 @@ harness = false
 
 [[bench]]
 name = "bloom_fjall_benchmarks"
+harness = false
+required-features = ["fjall"]
+
+[[bench]]
+name = "ebloom_benchmarks"
+harness = false
+
+[[bench]]
+name = "ebloom_fjall_benchmarks"
 harness = false
 required-features = ["fjall"]
