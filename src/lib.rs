@@ -35,6 +35,9 @@ mod hash;
 #[cfg(feature = "python")]
 mod python;
 
+#[cfg(feature = "server")]
+pub mod server;
+
 pub use bloom::error::{BloomError, BloomResult};
 pub use ebloom::error::{EbloomError, EbloomResult};
 pub use hash::{
