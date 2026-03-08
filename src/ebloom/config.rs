@@ -7,9 +7,32 @@ use crate::ebloom::error::{EbloomError, Result};
 
 #[derive(Debug, Clone, Builder, Serialize, Deserialize)]
 pub struct ExpiringPersistenceConfig {
+    /// Path to the on-disk database directory.
     pub db_path: PathBuf,
+
+    /// Chunk size in bytes for incremental dirty-chunk snapshots.
     #[builder(default = "4096")]
     pub chunk_size_bytes: usize,
+
+    /// Enable the background auto-snapshot task for dirty chunks.
+    ///
+    /// When true, a background task periodically persists dirty chunks to disk
+    /// based on `snapshot_interval` and/or `snapshot_after_inserts`.
+    /// Full snapshots on level rotation are unaffected by this flag.
+    /// A final snapshot is always attempted on clean shutdown regardless of this flag.
+    #[builder(default = "false")]
+    pub auto_snapshot: bool,
+
+    /// How often the background snapshot task fires.
+    /// Only used when `auto_snapshot` is true.
+    #[builder(default = "Duration::from_secs(60)")]
+    pub snapshot_interval: Duration,
+
+    /// Trigger a snapshot after this many inserts since the last successful snapshot.
+    /// Set to 0 to disable the insert-count trigger.
+    /// Only used when `auto_snapshot` is true.
+    #[builder(default = "0")]
+    pub snapshot_after_inserts: usize,
 }
 
 #[derive(Debug, Clone, Builder, Serialize, Deserialize)]

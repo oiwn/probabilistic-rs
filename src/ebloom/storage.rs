@@ -156,6 +156,7 @@ impl ExpiringStorageBackend for InMemoryExpiringStorage {
 
 /// Fjall storage backend for expiring bloom filters
 #[cfg(feature = "fjall")]
+#[derive(Clone)]
 pub struct FjallExpiringBackend {
     db: Arc<fjall::Database>,
     config_partition: Arc<fjall::Keyspace>,

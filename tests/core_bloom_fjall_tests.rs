@@ -478,6 +478,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_insert_counter_increments() {
+        let test_db = TestDb::new("insert_counter");
+        let config = create_test_config(test_db.path.clone());
+        let filter = BloomFilter::create(config).await.unwrap();
+
+        assert_eq!(filter.inserts_since_snapshot(), 0);
+        filter.insert(b"a").unwrap();
+        assert_eq!(filter.inserts_since_snapshot(), 1);
+        filter.insert(b"b").unwrap();
+        filter.insert(b"c").unwrap();
+        assert_eq!(filter.inserts_since_snapshot(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_bulk_insert_counter_increments() {
+        let test_db = TestDb::new("bulk_insert_counter");
+        let config = create_test_config(test_db.path.clone());
+
+        use probabilistic_rs::bloom::BulkBloomFilterOps;
+        let filter = BloomFilter::create(config).await.unwrap();
+
+        filter
+            .insert_bulk(&[b"x".as_ref(), b"y".as_ref(), b"z".as_ref()])
+            .unwrap();
+        assert_eq!(filter.inserts_since_snapshot(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_successful_snapshot_resets_counter() {
+        let test_db = TestDb::new("snapshot_resets_counter");
+        let config = create_test_config(test_db.path.clone());
+        let filter = BloomFilter::create(config).await.unwrap();
+
+        filter.insert(b"item1").unwrap();
+        filter.insert(b"item2").unwrap();
+        assert_eq!(filter.inserts_since_snapshot(), 2);
+
+        filter.save_snapshot().await.unwrap();
+        assert_eq!(filter.inserts_since_snapshot(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_snapshot_skips_when_nothing_dirty() {
+        let test_db = TestDb::new("snapshot_no_dirty");
+        let config = create_test_config(test_db.path.clone());
+        let filter = BloomFilter::create(config).await.unwrap();
+
+        // No inserts — save_snapshot should succeed and counter stays 0
+        filter.save_snapshot().await.unwrap();
+        assert_eq!(filter.inserts_since_snapshot(), 0);
+    }
+
+    #[tokio::test]
     async fn test_persistence_with_clear() {
         let test_db = TestDb::new("clear_persistence");
         let config = create_test_config(test_db.path.clone());

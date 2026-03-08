@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 #[cfg(feature = "fjall")]
+#[derive(Clone)]
 pub struct FjallBackend {
     db: Arc<fjall::Database>,
     config_partition: Arc<fjall::Keyspace>,
