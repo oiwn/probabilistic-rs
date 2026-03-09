@@ -708,13 +708,6 @@ async fn do_ebloom_snapshot(
 
     match storage.save_dirty_chunks(current_idx, &dirty).await {
         Ok(()) => {
-            dirty_chunks
-                .write()
-                .map_err(|_| {
-                    EbloomError::LockError("Failed to write dirty chunks".into())
-                })?
-                .fill(false);
-
             let now_ms = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_err(|e| EbloomError::TimeError(e.to_string()))?
@@ -732,6 +725,16 @@ async fn do_ebloom_snapshot(
                 state.on_snapshot_failure(&e.to_string());
                 return Err(e);
             }
+
+            // Clear dirty bits only after both saves succeed. This ensures that
+            // if the task is aborted between the two awaits, the dirty bits
+            // remain set and the final snapshot on drop can re-save idempotently.
+            dirty_chunks
+                .write()
+                .map_err(|_| {
+                    EbloomError::LockError("Failed to write dirty chunks".into())
+                })?
+                .fill(false);
 
             state.on_snapshot_success();
             Ok(())
