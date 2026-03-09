@@ -31,6 +31,9 @@ pub mod bloom;
 pub mod common;
 pub mod ebloom;
 mod hash;
+#[cfg(any(feature = "server", feature = "python", feature = "fjall"))]
+pub mod runtime;
+pub mod snapshot;
 
 #[cfg(feature = "python")]
 mod python;
