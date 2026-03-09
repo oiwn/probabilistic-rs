@@ -22,6 +22,42 @@ use tokio::{sync::Notify, task::JoinHandle, time::Duration};
 #[cfg(feature = "fjall")]
 use crate::ebloom::storage::{ExpiringStorageBackend, FjallExpiringBackend};
 
+// ---------------------------------------------------------------------------
+// Persistence handle — all fjall-gated state in one place
+// ---------------------------------------------------------------------------
+
+/// All persistence-related state for an `ExpiringBloomFilter`.
+/// Only present when a `db_path` is configured and the `fjall` feature is enabled.
+#[cfg(feature = "fjall")]
+struct ExpiringPersistenceHandle {
+    storage: Arc<FjallExpiringBackend>,
+    dirty_chunks: Arc<RwLock<BitVec<usize, Lsb0>>>,
+    chunk_size_bytes: usize,
+    snapshot_state: Arc<SnapshotState>,
+    // Only `Some` when `auto_snapshot` is true:
+    shutdown_signal: Option<Arc<AtomicBool>>,
+    snapshot_notify: Option<Arc<Notify>>,
+    task_handle: Option<JoinHandle<()>>,
+}
+
+/// Arguments bundled for the background snapshot task.
+#[cfg(feature = "fjall")]
+struct ExpiringSnapshotLoopCtx {
+    levels: Arc<RwLock<Vec<BitVec<usize, Lsb0>>>>,
+    dirty_chunks: Arc<RwLock<BitVec<usize, Lsb0>>>,
+    metadata: Arc<RwLock<Vec<LevelMetadata>>>,
+    current_level: Arc<AtomicUsize>,
+    chunk_size_bytes: usize,
+    state: Arc<SnapshotState>,
+    interval: Duration,
+    shutdown: Arc<AtomicBool>,
+    notify: Arc<Notify>,
+}
+
+// ---------------------------------------------------------------------------
+// ExpiringBloomFilter struct
+// ---------------------------------------------------------------------------
+
 pub struct ExpiringBloomFilter {
     config: ExpiringFilterConfig,
     bit_vector_size: usize,
@@ -34,23 +70,9 @@ pub struct ExpiringBloomFilter {
     metadata: Arc<RwLock<Vec<LevelMetadata>>>,
     current_level: Arc<AtomicUsize>,
 
-    // Persistence support — wrapped in Arc so the background task can hold a Weak ref
-    // without keeping the DB file lock alive after the filter is dropped.
+    /// All persistence state lives here; one `#[cfg]` instead of five.
     #[cfg(feature = "fjall")]
-    storage: Option<Arc<FjallExpiringBackend>>,
-    chunk_size_bytes: usize,
-    dirty_chunks: Option<Arc<RwLock<BitVec<usize, Lsb0>>>>,
-
-    #[cfg(feature = "fjall")]
-    snapshot_state: Option<Arc<SnapshotState>>,
-
-    // Background auto-snapshot
-    #[cfg(feature = "fjall")]
-    shutdown_signal: Option<Arc<AtomicBool>>,
-    #[cfg(feature = "fjall")]
-    snapshot_notify: Option<Arc<Notify>>,
-    #[cfg(feature = "fjall")]
-    task_handle: Option<JoinHandle<()>>,
+    persistence: Option<ExpiringPersistenceHandle>,
 }
 
 impl ExpiringBloomFilter {
@@ -73,8 +95,6 @@ impl ExpiringBloomFilter {
 
         let metadata: Vec<LevelMetadata> = (0..config.num_levels)
             .map(|i| LevelMetadata {
-                // Only the first level (current) has a timestamp (in milliseconds)
-                // Others are not yet active (created_at = 0 means not initialized)
                 created_at: if i == 0 { now_ms } else { 0 },
                 insert_count: 0,
                 last_snapshot_at: 0,
@@ -89,17 +109,7 @@ impl ExpiringBloomFilter {
             metadata: Arc::new(RwLock::new(metadata)),
             current_level: Arc::new(AtomicUsize::new(0)),
             #[cfg(feature = "fjall")]
-            storage: None,
-            chunk_size_bytes: 0,
-            dirty_chunks: None,
-            #[cfg(feature = "fjall")]
-            snapshot_state: None,
-            #[cfg(feature = "fjall")]
-            shutdown_signal: None,
-            #[cfg(feature = "fjall")]
-            snapshot_notify: None,
-            #[cfg(feature = "fjall")]
-            task_handle: None,
+            persistence: None,
         })
     }
 
@@ -138,59 +148,58 @@ impl ExpiringBloomFilter {
 
         let current_level = Arc::new(AtomicUsize::new(0));
 
-        // Setup dirty chunks if persistence enabled
-        let (chunk_size_bytes, dirty_chunks) =
-            if let Some(persistence) = &config.persistence {
-                let chunk_size = persistence.chunk_size_bytes;
-                let chunk_count = (bit_vector_size + chunk_size * 8 - 1)
-                    .div_ceil(chunk_size * 8);
-                (
-                    chunk_size,
-                    Some(Arc::new(RwLock::new(bitvec![0; chunk_count]))),
-                )
-            } else {
-                (0, None)
-            };
-
         #[cfg(feature = "fjall")]
-        let snapshot_state = if storage.is_some() {
-            Some(SnapshotState::new())
+        let persistence = if let Some(s) = storage {
+            let chunk_size_bytes = config
+                .persistence
+                .as_ref()
+                .map(|p| p.chunk_size_bytes)
+                .unwrap_or(4096);
+            let chunk_count = (bit_vector_size + chunk_size_bytes * 8 - 1)
+                .div_ceil(chunk_size_bytes * 8);
+            let dirty_chunks = Arc::new(RwLock::new(bitvec![0; chunk_count]));
+            let snapshot_state = SnapshotState::new();
+
+            let (shutdown_signal, snapshot_notify, task_handle) =
+                if let Some(pers) = &config.persistence {
+                    if pers.auto_snapshot {
+                        let shutdown = Arc::new(AtomicBool::new(false));
+                        let notify = Arc::new(Notify::new());
+                        let handle =
+                            tokio::spawn(background_snapshot_loop_ebloom(
+                                Arc::downgrade(&s),
+                                ExpiringSnapshotLoopCtx {
+                                    levels: Arc::clone(&levels),
+                                    dirty_chunks: Arc::clone(&dirty_chunks),
+                                    metadata: Arc::clone(&metadata),
+                                    current_level: Arc::clone(&current_level),
+                                    chunk_size_bytes,
+                                    state: Arc::clone(&snapshot_state),
+                                    interval: pers.snapshot_interval,
+                                    shutdown: Arc::clone(&shutdown),
+                                    notify: Arc::clone(&notify),
+                                },
+                            ));
+                        (Some(shutdown), Some(notify), Some(handle))
+                    } else {
+                        (None, None, None)
+                    }
+                } else {
+                    (None, None, None)
+                };
+
+            Some(ExpiringPersistenceHandle {
+                storage: s,
+                dirty_chunks,
+                chunk_size_bytes,
+                snapshot_state,
+                shutdown_signal,
+                snapshot_notify,
+                task_handle,
+            })
         } else {
             None
         };
-
-        // Spawn background auto-snapshot task if configured
-        #[cfg(feature = "fjall")]
-        let (shutdown_signal, snapshot_notify, task_handle) =
-            if let (Some(s), Some(pers), Some(state), Some(dc)) = (
-                &storage,
-                &config.persistence,
-                &snapshot_state,
-                &dirty_chunks,
-            ) {
-                if pers.auto_snapshot {
-                    let shutdown = Arc::new(AtomicBool::new(false));
-                    let notify = Arc::new(Notify::new());
-                    let handle = tokio::spawn(background_snapshot_loop_ebloom(
-                        Arc::downgrade(s),
-                        Arc::clone(&levels),
-                        Arc::clone(dc),
-                        Arc::clone(&metadata),
-                        Arc::clone(&current_level),
-                        chunk_size_bytes,
-                        Arc::clone(state),
-                        pers.snapshot_interval,
-                        pers.snapshot_after_inserts,
-                        Arc::clone(&shutdown),
-                        Arc::clone(&notify),
-                    ));
-                    (Some(shutdown), Some(notify), Some(handle))
-                } else {
-                    (None, None, None)
-                }
-            } else {
-                (None, None, None)
-            };
 
         Ok(Self {
             config,
@@ -200,17 +209,7 @@ impl ExpiringBloomFilter {
             metadata,
             current_level,
             #[cfg(feature = "fjall")]
-            storage,
-            chunk_size_bytes,
-            dirty_chunks,
-            #[cfg(feature = "fjall")]
-            snapshot_state,
-            #[cfg(feature = "fjall")]
-            shutdown_signal,
-            #[cfg(feature = "fjall")]
-            snapshot_notify,
-            #[cfg(feature = "fjall")]
-            task_handle,
+            persistence,
         })
     }
 
@@ -218,7 +217,6 @@ impl ExpiringBloomFilter {
     pub async fn create(config: ExpiringFilterConfig) -> Result<Self> {
         #[cfg(feature = "fjall")]
         let storage = if let Some(ref pers) = config.persistence {
-            // Create parent directory if needed
             if let Some(parent) = pers.db_path.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| {
                     EbloomError::StorageError(format!(
@@ -227,7 +225,6 @@ impl ExpiringBloomFilter {
                 })?;
             }
 
-            // Delete existing DB if present
             if pers.db_path.exists() {
                 std::fs::remove_dir_all(&pers.db_path).map_err(|e| {
                     EbloomError::StorageError(format!(
@@ -236,18 +233,15 @@ impl ExpiringBloomFilter {
                 })?;
             }
 
-            // Create Fjall backend
             let backend = FjallExpiringBackend::new(
                 pers.db_path.clone(),
                 config.num_levels,
             )
             .await?;
 
-            // Save initial config
             backend.save_config(&config).await?;
             backend.save_current_level(0).await?;
 
-            // Save initial metadata
             let now_ms = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -285,20 +279,16 @@ impl ExpiringBloomFilter {
             )));
         }
 
-        // Load config first to get num_levels
         let temp_backend = FjallExpiringBackend::new(db_path.clone(), 10).await?;
         let config = temp_backend.load_config().await?;
         drop(temp_backend);
 
-        // Create backend with correct num_levels
         let backend =
             FjallExpiringBackend::new(db_path, config.num_levels).await?;
 
-        // Build filter
         let mut filter =
             Self::build_filter(config, Some(Arc::new(backend))).await?;
 
-        // Reconstruct all levels from storage
         filter.reconstruct_from_storage().await?;
 
         Ok(filter)
@@ -307,17 +297,11 @@ impl ExpiringBloomFilter {
     /// Create or load (convenience method)
     pub async fn create_or_load(config: ExpiringFilterConfig) -> Result<Self> {
         #[cfg(feature = "fjall")]
-        if let Some(ref pers) = config.persistence {
-            if pers.db_path.exists() {
-                Self::load(pers.db_path.clone()).await
-            } else {
-                Self::create(config).await
-            }
-        } else {
-            Self::create(config).await
+        if let Some(ref pers) = config.persistence
+            && pers.db_path.exists()
+        {
+            return Self::load(pers.db_path.clone()).await;
         }
-
-        #[cfg(not(feature = "fjall"))]
         Self::create(config).await
     }
 
@@ -333,31 +317,29 @@ impl ExpiringBloomFilter {
         })?;
         if let Some(level_meta) = metadata.get(level_index) {
             if level_meta.created_at == 0 {
-                return Ok(false); // Not initialized yet
+                return Ok(false);
             }
             let now_ms = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_err(|e| EbloomError::TimeError(e.to_string()))?
                 .as_millis() as u64;
-            let level_age_ms = now_ms - level_meta.created_at; // Both in milliseconds
+            let level_age_ms = now_ms - level_meta.created_at;
             Ok(level_age_ms > self.config.level_duration.as_millis() as u64)
         } else {
-            Ok(false) // Index out of bounds
+            Ok(false)
         }
     }
 
-    /// Rotate levels: move to next level in circular fashion
-    /// The new current level is cleared (oldest data expires)
+    /// Rotate levels: move to next level in circular fashion.
+    /// The new current level is cleared (oldest data expires).
     pub async fn rotate_levels(&self) -> Result<()> {
         let current_idx = self.current_level.load(Ordering::Relaxed);
-
-        // Calculate next level index (circular)
         let new_current_idx = (current_idx + 1) % self.config.num_levels;
 
-        // 1. Save FULL snapshot of current level (freeze it forever)
+        // 1. Save FULL snapshot of current level (freeze it)
         self.save_full_snapshot().await?;
 
-        // 2. Get write locks and clear the new current level
+        // 2. Clear the new current level
         {
             let mut levels = self.levels.write().map_err(|_| {
                 EbloomError::LockError("Failed to write levels".to_string())
@@ -365,10 +347,10 @@ impl ExpiringBloomFilter {
             levels[new_current_idx].fill(false);
         }
 
-        // 3. Delete new current level's old data from DB (both chunks AND dirty)
+        // 3. Delete new current level's old data from DB
         #[cfg(feature = "fjall")]
-        if let Some(ref backend) = self.storage {
-            backend.delete_level(new_current_idx).await?;
+        if let Some(ref ph) = self.persistence {
+            ph.storage.delete_level(new_current_idx).await?;
         }
 
         // 4. Update metadata for the new current level
@@ -389,22 +371,27 @@ impl ExpiringBloomFilter {
             metadata.clone()
         };
 
-        // 5. Save metadata and current level pointer to DB
+        // 5. Persist metadata and current level pointer
         #[cfg(feature = "fjall")]
-        if let Some(ref backend) = self.storage {
-            backend.save_level_metadata(&new_metadata).await?;
-            backend.save_current_level(new_current_idx).await?;
+        if let Some(ref ph) = self.persistence {
+            ph.storage.save_level_metadata(&new_metadata).await?;
+            ph.storage.save_current_level(new_current_idx).await?;
         }
 
-        // 7. Update current level pointer in memory
+        // 6. Update current level pointer in memory
         self.current_level.store(new_current_idx, Ordering::Relaxed);
 
-        // 8. Clear dirty chunks tracker (for new current level)
-        if let Some(ref dirty_chunks_arc) = self.dirty_chunks {
-            let mut dirty = dirty_chunks_arc.write().map_err(|_| {
-                EbloomError::LockError("Failed to write dirty chunks".to_string())
-            })?;
-            dirty.fill(false);
+        // 7. Clear dirty chunks tracker
+        #[cfg(feature = "fjall")]
+        if let Some(ref ph) = self.persistence {
+            ph.dirty_chunks
+                .write()
+                .map_err(|_| {
+                    EbloomError::LockError(
+                        "Failed to write dirty chunks".to_string(),
+                    )
+                })?
+                .fill(false);
         }
 
         Ok(())
@@ -413,11 +400,9 @@ impl ExpiringBloomFilter {
     /// Clean up expired levels by rotating when current level expires
     pub async fn cleanup_expired_levels(&self) -> Result<()> {
         let current_level = self.current_level.load(Ordering::Relaxed);
-
         if self.is_level_expired(current_level)? {
             self.rotate_levels().await?;
         }
-
         Ok(())
     }
 
@@ -427,12 +412,9 @@ impl ExpiringBloomFilter {
     /// On failure, poisons the filter — subsequent writes will return the stored error.
     pub async fn save_snapshot(&self) -> Result<()> {
         #[cfg(feature = "fjall")]
-        if let Some(ref backend) = self.storage {
-            // Return stored error if poisoned
-            if let Some(ref state) = self.snapshot_state {
-                if let Some(err) = state.check_poison() {
-                    return Err(EbloomError::StorageError(err));
-                }
+        if let Some(ref ph) = self.persistence {
+            if let Some(err) = ph.snapshot_state.check_poison() {
+                return Err(EbloomError::StorageError(err));
             }
 
             let current_idx = self.current_level.load(Ordering::Relaxed);
@@ -442,23 +424,21 @@ impl ExpiringBloomFilter {
                 return Ok(());
             }
 
-            let save_result =
-                backend.save_dirty_chunks(current_idx, &dirty_chunks).await;
-
-            match save_result {
+            match ph
+                .storage
+                .save_dirty_chunks(current_idx, &dirty_chunks)
+                .await
+            {
                 Ok(()) => {
-                    // Clear dirty flags
-                    if let Some(ref dc) = self.dirty_chunks {
-                        dc.write()
-                            .map_err(|_| {
-                                EbloomError::LockError(
-                                    "Failed to write dirty chunks".into(),
-                                )
-                            })?
-                            .fill(false);
-                    }
+                    ph.dirty_chunks
+                        .write()
+                        .map_err(|_| {
+                            EbloomError::LockError(
+                                "Failed to write dirty chunks".into(),
+                            )
+                        })?
+                        .fill(false);
 
-                    // Update last_snapshot_at metadata
                     let now_ms = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .map_err(|e| EbloomError::TimeError(e.to_string()))?
@@ -476,22 +456,16 @@ impl ExpiringBloomFilter {
                     };
 
                     if let Err(e) =
-                        backend.save_level_metadata(&updated_metadata).await
+                        ph.storage.save_level_metadata(&updated_metadata).await
                     {
-                        if let Some(ref state) = self.snapshot_state {
-                            state.on_snapshot_failure(&e.to_string());
-                        }
+                        ph.snapshot_state.on_snapshot_failure(&e.to_string());
                         return Err(e);
                     }
 
-                    if let Some(ref state) = self.snapshot_state {
-                        state.on_snapshot_success();
-                    }
+                    ph.snapshot_state.on_snapshot_success();
                 }
                 Err(e) => {
-                    if let Some(ref state) = self.snapshot_state {
-                        state.on_snapshot_failure(&e.to_string());
-                    }
+                    ph.snapshot_state.on_snapshot_failure(&e.to_string());
                     return Err(e);
                 }
             }
@@ -502,13 +476,12 @@ impl ExpiringBloomFilter {
     /// Save full snapshot of CURRENT level (called on rotation)
     async fn save_full_snapshot(&self) -> Result<()> {
         #[cfg(feature = "fjall")]
-        if let Some(ref backend) = self.storage {
+        if let Some(ref ph) = self.persistence {
             let current_idx = self.current_level.load(Ordering::Relaxed);
             let chunks = self.extract_all_chunks()?;
 
-            backend.save_level_chunks(current_idx, &chunks).await?;
+            ph.storage.save_level_chunks(current_idx, &chunks).await?;
 
-            // Update last_snapshot_at
             let now_ms = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_err(|e| EbloomError::TimeError(e.to_string()))?
@@ -522,26 +495,24 @@ impl ExpiringBloomFilter {
                 metadata.clone()
             };
 
-            backend.save_level_metadata(&updated_metadata).await?;
+            ph.storage.save_level_metadata(&updated_metadata).await?;
         }
         Ok(())
     }
 
     /// Extract dirty chunks for current level only
     fn extract_dirty_chunks(&self) -> Result<Vec<(usize, Vec<u8>)>> {
-        let mut chunks = Vec::new();
-
-        if let Some(ref dirty_chunks_arc) = self.dirty_chunks {
+        #[cfg(feature = "fjall")]
+        if let Some(ref ph) = self.persistence {
             let current_idx = self.current_level.load(Ordering::Relaxed);
             let levels = self.levels.read().map_err(|_| {
                 EbloomError::LockError("Failed to read levels".to_string())
             })?;
-            let dirty = dirty_chunks_arc.read().map_err(|_| {
+            let dirty = ph.dirty_chunks.read().map_err(|_| {
                 EbloomError::LockError("Failed to read dirty chunks".to_string())
             })?;
-
-            let chunk_size_bits = self.chunk_size_bytes * 8;
-
+            let chunk_size_bits = ph.chunk_size_bytes * 8;
+            let mut chunks = Vec::new();
             for chunk_id in 0..dirty.len() {
                 if dirty[chunk_id] {
                     let chunk_data = extract_chunk_bytes(
@@ -552,19 +523,25 @@ impl ExpiringBloomFilter {
                     chunks.push((chunk_id, chunk_data));
                 }
             }
+            return Ok(chunks);
         }
-
-        Ok(chunks)
+        Ok(Vec::new())
     }
 
     /// Extract all chunks for current level only
+    #[cfg(feature = "fjall")]
     fn extract_all_chunks(&self) -> Result<Vec<(usize, Vec<u8>)>> {
+        let chunk_size_bytes = self
+            .persistence
+            .as_ref()
+            .map(|ph| ph.chunk_size_bytes)
+            .unwrap_or(0);
         let current_idx = self.current_level.load(Ordering::Relaxed);
         let levels = self.levels.read().map_err(|_| {
             EbloomError::LockError("Failed to read levels".to_string())
         })?;
 
-        let chunk_size_bits = self.chunk_size_bytes * 8;
+        let chunk_size_bits = chunk_size_bytes * 8;
         let num_chunks = (self.bit_vector_size + chunk_size_bits - 1)
             .div_ceil(chunk_size_bits);
 
@@ -577,27 +554,22 @@ impl ExpiringBloomFilter {
             );
             chunks.push((chunk_id, chunk_data));
         }
-
         Ok(chunks)
     }
 
     /// Reconstruct all N levels from storage (on load)
+    #[cfg(feature = "fjall")]
     async fn reconstruct_from_storage(&mut self) -> Result<()> {
-        #[cfg(feature = "fjall")]
-        if let Some(ref backend) = self.storage {
-            use crate::ebloom::storage::ExpiringStorageBackend;
+        if let Some(ref ph) = self.persistence {
+            let backend = &ph.storage;
 
-            // Load current level index
             let current_idx = backend.load_current_level().await?;
             self.current_level.store(current_idx, Ordering::Relaxed);
 
-            // Load all data from DB first (no locks held)
             let loaded_metadata = backend.load_level_metadata().await?;
 
-            // Load all N levels from DB
             let mut loaded_levels_data = Vec::new();
             for level_idx in 0..self.config.num_levels {
-                // Try dirty chunks first, fallback to full chunks
                 let dirty_chunks = backend.load_dirty_chunks(level_idx).await?;
                 if !dirty_chunks.is_empty() {
                     loaded_levels_data.push((level_idx, dirty_chunks));
@@ -607,7 +579,6 @@ impl ExpiringBloomFilter {
                 }
             }
 
-            // Now acquire locks and write data (no await points)
             {
                 let mut metadata = self.metadata.write().map_err(|_| {
                     EbloomError::LockError("Failed to write metadata".to_string())
@@ -624,7 +595,7 @@ impl ExpiringBloomFilter {
                     reconstruct_level_from_chunks(
                         &mut levels[level_idx],
                         &chunks,
-                        self.chunk_size_bytes,
+                        ph.chunk_size_bytes,
                     )?;
                 }
             }
@@ -636,9 +607,9 @@ impl ExpiringBloomFilter {
     /// Returns 0 when persistence is not configured.
     #[cfg(feature = "fjall")]
     pub fn inserts_since_snapshot(&self) -> usize {
-        self.snapshot_state
+        self.persistence
             .as_ref()
-            .map(|s| s.inserts_since_snapshot())
+            .map(|ph| ph.snapshot_state.inserts_since_snapshot())
             .unwrap_or(0)
     }
 }
@@ -650,46 +621,45 @@ impl ExpiringBloomFilter {
 #[cfg(feature = "fjall")]
 impl Drop for ExpiringBloomFilter {
     fn drop(&mut self) {
-        if let Some(ref signal) = self.shutdown_signal {
+        let Some(ref mut ph) = self.persistence else {
+            return;
+        };
+
+        if let Some(ref signal) = ph.shutdown_signal {
             signal.store(true, Ordering::Relaxed);
         }
-        if let Some(ref notify) = self.snapshot_notify {
+        if let Some(ref notify) = ph.snapshot_notify {
             notify.notify_one();
         }
-        if let Some(handle) = self.task_handle.take() {
+        if let Some(handle) = ph.task_handle.take() {
             handle.abort();
         }
 
-        // Attempt a final snapshot in a dedicated thread + mini runtime.
-        if let (Some(storage), Some(dc), Some(state)) =
-            (&self.storage, &self.dirty_chunks, &self.snapshot_state)
-        {
-            if state.check_poison().is_none() {
-                let storage = Arc::clone(storage);
-                let levels = Arc::clone(&self.levels);
-                let dc = Arc::clone(dc);
-                let metadata = Arc::clone(&self.metadata);
-                let current_level = Arc::clone(&self.current_level);
-                let chunk_size_bytes = self.chunk_size_bytes;
-                let state = Arc::clone(state);
-                let _ = std::thread::spawn(move || {
-                    if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                    {
-                        let _ = rt.block_on(do_ebloom_snapshot(
-                            storage,
-                            &levels,
-                            &dc,
-                            &metadata,
-                            &current_level,
-                            chunk_size_bytes,
-                            &state,
-                        ));
-                    }
-                })
-                .join();
-            }
+        if ph.snapshot_state.check_poison().is_none() {
+            let storage = Arc::clone(&ph.storage);
+            let levels = Arc::clone(&self.levels);
+            let dc = Arc::clone(&ph.dirty_chunks);
+            let metadata = Arc::clone(&self.metadata);
+            let current_level = Arc::clone(&self.current_level);
+            let chunk_size_bytes = ph.chunk_size_bytes;
+            let state = Arc::clone(&ph.snapshot_state);
+            let _ = std::thread::spawn(move || {
+                if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    let _ = rt.block_on(do_ebloom_snapshot(
+                        storage,
+                        &levels,
+                        &dc,
+                        &metadata,
+                        &current_level,
+                        chunk_size_bytes,
+                        &state,
+                    ));
+                }
+            })
+            .join();
         }
     }
 }
@@ -701,17 +671,15 @@ fn maybe_notify_count_trigger_ebloom(
     notify: &Option<Arc<Notify>>,
     config: &ExpiringFilterConfig,
 ) {
-    if let (Some(notify), Some(pers)) = (notify, &config.persistence) {
-        if pers.snapshot_after_inserts > 0
-            && state.inserts_since_snapshot() >= pers.snapshot_after_inserts
-        {
-            notify.notify_one();
-        }
+    if let (Some(notify), Some(pers)) = (notify, &config.persistence)
+        && pers.snapshot_after_inserts > 0
+        && state.inserts_since_snapshot() >= pers.snapshot_after_inserts
+    {
+        notify.notify_one();
     }
 }
 
 /// Core snapshot logic: extract dirty chunks for current level, persist, clear flags, update state.
-/// Returns Ok(()) immediately if nothing is dirty or filter is poisoned.
 #[cfg(feature = "fjall")]
 async fn do_ebloom_snapshot(
     storage: Arc<FjallExpiringBackend>,
@@ -805,32 +773,22 @@ fn extract_ebloom_dirty_chunks(
 }
 
 /// Background task: wakes on time interval or insert-count notify, runs dirty snapshot.
-/// Exits when the filter is dropped (Weak upgrade fails), shutdown is signalled, or snapshot fails.
 #[cfg(feature = "fjall")]
 async fn background_snapshot_loop_ebloom(
     storage: Weak<FjallExpiringBackend>,
-    levels: Arc<RwLock<Vec<BitVec<usize, Lsb0>>>>,
-    dirty_chunks: Arc<RwLock<BitVec<usize, Lsb0>>>,
-    metadata: Arc<RwLock<Vec<LevelMetadata>>>,
-    current_level: Arc<AtomicUsize>,
-    chunk_size_bytes: usize,
-    state: Arc<SnapshotState>,
-    interval: Duration,
-    _count_threshold: usize,
-    shutdown: Arc<AtomicBool>,
-    notify: Arc<Notify>,
+    ctx: ExpiringSnapshotLoopCtx,
 ) {
-    let mut ticker = tokio::time::interval(interval);
+    let mut ticker = tokio::time::interval(ctx.interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    ticker.tick().await; // skip immediate first tick
+    ticker.tick().await;
 
     loop {
         tokio::select! {
             _ = ticker.tick() => {}
-            _ = notify.notified() => {}
+            _ = ctx.notify.notified() => {}
         }
 
-        if shutdown.load(Ordering::Relaxed) {
+        if ctx.shutdown.load(Ordering::Relaxed) {
             tracing::debug!(
                 "Ebloom background snapshot task received shutdown signal"
             );
@@ -844,7 +802,7 @@ async fn background_snapshot_loop_ebloom(
             break;
         };
 
-        if state.check_poison().is_some() {
+        if ctx.state.check_poison().is_some() {
             tracing::debug!(
                 "Ebloom background snapshot task exiting — filter is poisoned"
             );
@@ -853,12 +811,12 @@ async fn background_snapshot_loop_ebloom(
 
         if let Err(e) = do_ebloom_snapshot(
             storage,
-            &levels,
-            &dirty_chunks,
-            &metadata,
-            &current_level,
-            chunk_size_bytes,
-            &state,
+            &ctx.levels,
+            &ctx.dirty_chunks,
+            &ctx.metadata,
+            &ctx.current_level,
+            ctx.chunk_size_bytes,
+            &ctx.state,
         )
         .await
         {
@@ -930,10 +888,8 @@ fn insert_internal(
     dirty: Option<&mut BitVec<usize, Lsb0>>,
     levels: &mut [BitVec<usize, Lsb0>],
 ) -> Result<()> {
-    // Calculate hash indices
     let indices = default_hash_function(item, num_hashes, bit_vector_size);
 
-    // Mark dirty chunks (if dirty tracker provided)
     if let Some(dirty_bits) = dirty {
         for &idx in &indices {
             let chunk_id = (idx as usize) / (chunk_size_bytes * 8);
@@ -943,7 +899,6 @@ fn insert_internal(
         }
     }
 
-    // Insert into current level only
     if let Some(current_level) = levels.get_mut(current_level_idx) {
         for idx in indices {
             let idx = idx as usize;
@@ -967,10 +922,8 @@ fn contains_internal(
     bit_vector_size: usize,
     levels: &[BitVec<usize, Lsb0>],
 ) -> Result<bool> {
-    // Calculate hash indices
     let indices = default_hash_function(item, num_hashes, bit_vector_size);
 
-    // Check all levels
     for level in levels.iter() {
         let mut all_bits_set = true;
 
@@ -989,60 +942,74 @@ fn contains_internal(
             }
         }
 
-        // If found in any level, return true
         if all_bits_set {
             return Ok(true);
         }
     }
 
-    // Not found in any level
     Ok(false)
 }
 
 #[async_trait::async_trait]
 impl ExpiringBloomFilterOps for ExpiringBloomFilter {
     fn insert(&self, item: &[u8]) -> Result<()> {
-        // Reject writes if a previous snapshot failure poisoned the filter
         #[cfg(feature = "fjall")]
-        if let Some(ref state) = self.snapshot_state {
-            if let Some(err) = state.check_poison() {
-                return Err(EbloomError::StorageError(err));
-            }
+        if let Some(ref ph) = self.persistence
+            && let Some(err) = ph.snapshot_state.check_poison()
+        {
+            return Err(EbloomError::StorageError(err));
         }
 
-        // Get the current level index
         let current_level_idx = self.current_level.load(Ordering::Relaxed);
 
-        // Mark dirty chunks (if persistence enabled)
-        let mut dirty_guard = if let Some(ref dirty_chunks_arc) =
-            self.dirty_chunks
-        {
-            Some(dirty_chunks_arc.write().map_err(|_| {
-                EbloomError::LockError("Failed to write dirty chunks".to_string())
-            })?)
-        } else {
-            None
-        };
+        #[cfg(feature = "fjall")]
+        let mut dirty_guard = self
+            .persistence
+            .as_ref()
+            .map(|ph| {
+                ph.dirty_chunks.write().map_err(|_| {
+                    EbloomError::LockError(
+                        "Failed to write dirty chunks".to_string(),
+                    )
+                })
+            })
+            .transpose()?;
 
-        // Get write lock on levels
+        #[cfg(feature = "fjall")]
+        let chunk_size_bytes = self
+            .persistence
+            .as_ref()
+            .map(|ph| ph.chunk_size_bytes)
+            .unwrap_or(0);
+
         let mut levels = self.levels.write().map_err(|_| {
             EbloomError::LockError(
                 "Failed to acquire write lock on levels".to_string(),
             )
         })?;
 
-        // Perform the insertion
+        #[cfg(feature = "fjall")]
         insert_internal(
             item,
             current_level_idx,
             self.num_hashes,
             self.bit_vector_size,
-            self.chunk_size_bytes,
+            chunk_size_bytes,
             dirty_guard.as_deref_mut(),
             &mut levels,
         )?;
 
-        // Update metadata for current level
+        #[cfg(not(feature = "fjall"))]
+        insert_internal(
+            item,
+            current_level_idx,
+            self.num_hashes,
+            self.bit_vector_size,
+            0,
+            None,
+            &mut levels,
+        )?;
+
         let mut metadata = self.metadata.write().map_err(|_| {
             EbloomError::LockError(
                 "Failed to acquire write lock on metadata".to_string(),
@@ -1054,11 +1021,11 @@ impl ExpiringBloomFilterOps for ExpiringBloomFilter {
         drop(metadata);
 
         #[cfg(feature = "fjall")]
-        if let Some(ref state) = self.snapshot_state {
-            state.record_inserts(1);
+        if let Some(ref ph) = self.persistence {
+            ph.snapshot_state.record_inserts(1);
             maybe_notify_count_trigger_ebloom(
-                state,
-                &self.snapshot_notify,
+                &ph.snapshot_state,
+                &ph.snapshot_notify,
                 &self.config,
             );
         }
@@ -1067,7 +1034,6 @@ impl ExpiringBloomFilterOps for ExpiringBloomFilter {
     }
 
     fn contains(&self, item: &[u8]) -> Result<bool> {
-        // Get read lock on levels
         let levels = self.levels.read().map_err(|_| {
             EbloomError::LockError(
                 "Failed to acquire read lock on levels".to_string(),
@@ -1078,19 +1044,16 @@ impl ExpiringBloomFilterOps for ExpiringBloomFilter {
     }
 
     fn clear(&self) -> Result<()> {
-        // Get write lock on levels
         let mut levels = self.levels.write().map_err(|_| {
             EbloomError::LockError(
                 "Failed to acquire write lock on levels".to_string(),
             )
         })?;
 
-        // Clear all levels
         for level in levels.iter_mut() {
             level.fill(false);
         }
 
-        // Reset all metadata
         let mut metadata = self.metadata.write().map_err(|_| {
             EbloomError::LockError(
                 "Failed to acquire write lock on metadata".to_string(),
@@ -1103,12 +1066,11 @@ impl ExpiringBloomFilterOps for ExpiringBloomFilter {
             .as_millis() as u64;
 
         for meta in metadata.iter_mut() {
-            meta.created_at = now_ms; // Store in milliseconds
+            meta.created_at = now_ms;
             meta.insert_count = 0;
             meta.last_snapshot_at = 0;
         }
 
-        // Reset to level 0 as current
         self.current_level.store(0, Ordering::Relaxed);
 
         Ok(())
@@ -1116,11 +1078,9 @@ impl ExpiringBloomFilterOps for ExpiringBloomFilter {
 
     async fn cleanup_expired_levels(&self) -> Result<()> {
         let current_level = self.current_level.load(Ordering::Relaxed);
-
         if self.is_level_expired(current_level)? {
             self.rotate_levels().await?;
         }
-
         Ok(())
     }
 }
@@ -1150,49 +1110,65 @@ impl ExpiringBloomFilterStats for ExpiringBloomFilter {
 
 impl BulkExpiringBloomFilterOps for ExpiringBloomFilter {
     fn insert_bulk(&self, items: &[&[u8]]) -> Result<()> {
-        // Reject writes if a previous snapshot failure poisoned the filter
         #[cfg(feature = "fjall")]
-        if let Some(ref state) = self.snapshot_state {
-            if let Some(err) = state.check_poison() {
-                return Err(EbloomError::StorageError(err));
-            }
+        if let Some(ref ph) = self.persistence
+            && let Some(err) = ph.snapshot_state.check_poison()
+        {
+            return Err(EbloomError::StorageError(err));
         }
 
-        // Get the current level index
         let current_level_idx = self.current_level.load(Ordering::Relaxed);
 
-        // Mark dirty chunks (if persistence enabled)
-        let mut dirty_guard = if let Some(ref dirty_chunks_arc) =
-            self.dirty_chunks
-        {
-            Some(dirty_chunks_arc.write().map_err(|_| {
-                EbloomError::LockError("Failed to write dirty chunks".to_string())
-            })?)
-        } else {
-            None
-        };
+        #[cfg(feature = "fjall")]
+        let mut dirty_guard = self
+            .persistence
+            .as_ref()
+            .map(|ph| {
+                ph.dirty_chunks.write().map_err(|_| {
+                    EbloomError::LockError(
+                        "Failed to write dirty chunks".to_string(),
+                    )
+                })
+            })
+            .transpose()?;
 
-        // Get write lock on levels
+        #[cfg(feature = "fjall")]
+        let chunk_size_bytes = self
+            .persistence
+            .as_ref()
+            .map(|ph| ph.chunk_size_bytes)
+            .unwrap_or(0);
+
         let mut levels = self.levels.write().map_err(|_| {
             EbloomError::LockError(
                 "Failed to acquire write lock on levels".to_string(),
             )
         })?;
 
-        // Perform all insertions with single lock
         for item in items {
+            #[cfg(feature = "fjall")]
             insert_internal(
                 item,
                 current_level_idx,
                 self.num_hashes,
                 self.bit_vector_size,
-                self.chunk_size_bytes,
+                chunk_size_bytes,
                 dirty_guard.as_deref_mut(),
+                &mut levels,
+            )?;
+
+            #[cfg(not(feature = "fjall"))]
+            insert_internal(
+                item,
+                current_level_idx,
+                self.num_hashes,
+                self.bit_vector_size,
+                0,
+                None,
                 &mut levels,
             )?;
         }
 
-        // Update metadata for current level with total count
         let mut metadata = self.metadata.write().map_err(|_| {
             EbloomError::LockError(
                 "Failed to acquire write lock on metadata".to_string(),
@@ -1204,11 +1180,11 @@ impl BulkExpiringBloomFilterOps for ExpiringBloomFilter {
         drop(metadata);
 
         #[cfg(feature = "fjall")]
-        if let Some(ref state) = self.snapshot_state {
-            state.record_inserts(items.len());
+        if let Some(ref ph) = self.persistence {
+            ph.snapshot_state.record_inserts(items.len());
             maybe_notify_count_trigger_ebloom(
-                state,
-                &self.snapshot_notify,
+                &ph.snapshot_state,
+                &ph.snapshot_notify,
                 &self.config,
             );
         }
@@ -1217,23 +1193,22 @@ impl BulkExpiringBloomFilterOps for ExpiringBloomFilter {
     }
 
     fn contains_bulk(&self, items: &[&[u8]]) -> Result<Vec<bool>> {
-        // Get read lock on levels once
         let levels = self.levels.read().map_err(|_| {
             EbloomError::LockError(
                 "Failed to acquire read lock on levels".to_string(),
             )
         })?;
 
-        // Check all items with single lock
-        let mut results = Vec::with_capacity(items.len());
-        for item in items {
-            results.push(contains_internal(
-                item,
-                self.num_hashes,
-                self.bit_vector_size,
-                &levels,
-            )?);
-        }
-        Ok(results)
+        items
+            .iter()
+            .map(|item| {
+                contains_internal(
+                    item,
+                    self.num_hashes,
+                    self.bit_vector_size,
+                    &levels,
+                )
+            })
+            .collect()
     }
 }

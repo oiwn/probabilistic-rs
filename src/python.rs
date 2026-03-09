@@ -45,6 +45,66 @@ impl From<EbloomError> for PyErr {
     }
 }
 
+// ---------------------------------------------------------------------------
+// SnapshotConfig
+// ---------------------------------------------------------------------------
+
+/// Snapshot persistence configuration for persisted filters.
+///
+/// Pass to `BloomFilter.create()` or `ExpiringBloomFilter.create()` to control
+/// when dirty chunks are flushed to disk.
+///
+/// Args:
+///     auto_snapshot: Enable the background auto-snapshot task (default True).
+///         A final snapshot is always attempted on clean shutdown regardless of
+///         this setting.
+///     interval_secs: Trigger a snapshot every N seconds (default 300).
+///         Only used when `auto_snapshot` is True.
+///     after_inserts: Trigger a snapshot after N inserts since the last successful
+///         snapshot. Set to 0 to disable (default 0).
+///         Only used when `auto_snapshot` is True.
+#[pyclass(name = "SnapshotConfig", from_py_object)]
+#[derive(Clone)]
+pub struct PySnapshotConfig {
+    #[pyo3(get)]
+    pub auto_snapshot: bool,
+    #[pyo3(get)]
+    pub interval_secs: u64,
+    #[pyo3(get)]
+    pub after_inserts: usize,
+}
+
+#[pymethods]
+impl PySnapshotConfig {
+    #[new]
+    #[pyo3(signature = (auto_snapshot=true, interval_secs=300, after_inserts=0))]
+    fn new(
+        auto_snapshot: bool,
+        interval_secs: u64,
+        after_inserts: usize,
+    ) -> Self {
+        Self {
+            auto_snapshot,
+            interval_secs,
+            after_inserts,
+        }
+    }
+}
+
+impl Default for PySnapshotConfig {
+    fn default() -> Self {
+        Self {
+            auto_snapshot: true,
+            interval_secs: 300,
+            after_inserts: 0,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// BloomFilter
+// ---------------------------------------------------------------------------
+
 #[pyclass(name = "BloomFilter")]
 pub struct PyBloomFilter {
     inner: BloomFilter,
@@ -76,36 +136,27 @@ impl PyBloomFilter {
     ///     db_path: Path to the database directory.
     ///     capacity: Expected number of unique elements.
     ///     false_positive_rate: Target false positive probability (default 0.01).
-    ///     auto_snapshot: Enable background auto-snapshot (default True).
-    ///         When enabled, dirty chunks are persisted periodically based on
-    ///         `snapshot_interval_secs` and/or `snapshot_after_inserts`.
+    ///     snapshot: Snapshot configuration (default SnapshotConfig()).
+    ///         Controls when dirty chunks are flushed to disk automatically.
     ///         A final snapshot is always attempted on clean shutdown.
-    ///     snapshot_interval_secs: Background snapshot interval in seconds (default 300).
-    ///         Only used when `auto_snapshot` is True.
-    ///     snapshot_after_inserts: Trigger a snapshot after this many inserts since
-    ///         the last successful snapshot. Set to 0 to disable (default 0).
-    ///         Only used when `auto_snapshot` is True.
     ///
     /// Raises:
     ///     IOError: If snapshot writes fail. After the first failure the filter is
     ///         poisoned — subsequent inserts will raise the stored error.
     #[staticmethod]
-    #[pyo3(signature = (db_path, capacity, false_positive_rate=0.01, auto_snapshot=true, snapshot_interval_secs=300, snapshot_after_inserts=0))]
+    #[pyo3(signature = (db_path, capacity, false_positive_rate=0.01, snapshot=None))]
     fn create(
         db_path: &str,
         capacity: usize,
         false_positive_rate: f64,
-        auto_snapshot: bool,
-        snapshot_interval_secs: u64,
-        snapshot_after_inserts: usize,
+        snapshot: Option<PySnapshotConfig>,
     ) -> PyResult<Self> {
+        let snap = snapshot.unwrap_or_default();
         let persistence = PersistenceConfigBuilder::default()
             .db_path(PathBuf::from(db_path))
-            .auto_snapshot(auto_snapshot)
-            .snapshot_interval(std::time::Duration::from_secs(
-                snapshot_interval_secs,
-            ))
-            .snapshot_after_inserts(snapshot_after_inserts)
+            .auto_snapshot(snap.auto_snapshot)
+            .snapshot_interval(std::time::Duration::from_secs(snap.interval_secs))
+            .snapshot_after_inserts(snap.after_inserts)
             .build()
             .map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(e.to_string())
@@ -177,6 +228,10 @@ impl PyBloomFilter {
     }
 }
 
+// ---------------------------------------------------------------------------
+// ExpiringBloomFilter
+// ---------------------------------------------------------------------------
+
 #[pyclass(name = "ExpiringBloomFilter")]
 pub struct PyExpiringBloomFilter {
     inner: ExpiringBloomFilter,
@@ -217,38 +272,30 @@ impl PyExpiringBloomFilter {
     ///     target_fpr: Target false positive probability (default 0.01).
     ///     level_duration_secs: Duration of each time level in seconds (default 3600).
     ///     num_levels: Number of time levels (default 3).
-    ///     auto_snapshot: Enable background dirty-chunk auto-snapshot (default True).
-    ///         When enabled, dirty chunks are persisted periodically. Full snapshots
-    ///         on level rotation are always written regardless of this setting.
+    ///     snapshot: Snapshot configuration (default SnapshotConfig()).
+    ///         Controls dirty-chunk background snapshots. Full snapshots on level
+    ///         rotation are always written regardless of this setting.
     ///         A final snapshot is always attempted on clean shutdown.
-    ///     snapshot_interval_secs: Background snapshot interval in seconds (default 300).
-    ///         Only used when `auto_snapshot` is True.
-    ///     snapshot_after_inserts: Trigger a snapshot after this many inserts since
-    ///         the last successful snapshot. Set to 0 to disable (default 0).
-    ///         Only used when `auto_snapshot` is True.
     ///
     /// Raises:
     ///     IOError: If snapshot writes fail. After the first failure the filter is
     ///         poisoned — subsequent inserts will raise the stored error.
     #[staticmethod]
-    #[pyo3(signature = (db_path, capacity_per_level, target_fpr=0.01, level_duration_secs=3600, num_levels=3, auto_snapshot=true, snapshot_interval_secs=300, snapshot_after_inserts=0))]
+    #[pyo3(signature = (db_path, capacity_per_level, target_fpr=0.01, level_duration_secs=3600, num_levels=3, snapshot=None))]
     fn create(
         db_path: &str,
         capacity_per_level: usize,
         target_fpr: f64,
         level_duration_secs: u64,
         num_levels: usize,
-        auto_snapshot: bool,
-        snapshot_interval_secs: u64,
-        snapshot_after_inserts: usize,
+        snapshot: Option<PySnapshotConfig>,
     ) -> PyResult<Self> {
+        let snap = snapshot.unwrap_or_default();
         let persistence = ExpiringPersistenceConfigBuilder::default()
             .db_path(PathBuf::from(db_path))
-            .auto_snapshot(auto_snapshot)
-            .snapshot_interval(std::time::Duration::from_secs(
-                snapshot_interval_secs,
-            ))
-            .snapshot_after_inserts(snapshot_after_inserts)
+            .auto_snapshot(snap.auto_snapshot)
+            .snapshot_interval(std::time::Duration::from_secs(snap.interval_secs))
+            .snapshot_after_inserts(snap.after_inserts)
             .build()
             .map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(e.to_string())
@@ -343,6 +390,7 @@ impl PyExpiringBloomFilter {
 
 #[pymodule]
 fn probabilistic_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<PySnapshotConfig>()?;
     m.add_class::<PyBloomFilter>()?;
     m.add_class::<PyExpiringBloomFilter>()?;
     Ok(())
