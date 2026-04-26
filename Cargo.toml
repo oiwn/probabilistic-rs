@@ -64,7 +64,7 @@ features = ["fjall", "cli"]
 all-features = false
 
 [features]
-default = ["server", "cli", "fjall"]
+default = ["cli", "fjall"]
 docs-only = ["cli", "fjall"]
 fjall = ["dep:fjall", "dep:tokio"]
 server = ["dep:axum", "dep:tokio", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:serde_json", "dep:dotenvy", "fjall"]
