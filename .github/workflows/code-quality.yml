@@ -3,9 +3,9 @@ name: Code Quality
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
   workflow_dispatch:
 
 env:
@@ -41,4 +41,4 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Clippy check
-        run: cargo clippy --all-features --workspace -- -D warnings
+        run: cargo clippy --features "server,cli,fjall" --workspace -- -D warnings

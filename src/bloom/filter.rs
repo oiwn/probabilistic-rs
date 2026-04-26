@@ -23,6 +23,8 @@ use std::sync::Weak;
 #[cfg(feature = "fjall")]
 use tokio::{sync::Notify, task::JoinHandle, time::Duration};
 
+const DEFAULT_CHUNK_SIZE: usize = 4096;
+
 // ---------------------------------------------------------------------------
 // Persistence handle — all fjall-gated state in one place
 // ---------------------------------------------------------------------------
@@ -51,6 +53,34 @@ struct SnapshotLoopCtx {
     interval: Duration,
     shutdown: Arc<AtomicBool>,
     notify: Arc<Notify>,
+}
+
+#[cfg(feature = "fjall")]
+impl BloomPersistenceHandle {
+    fn check_poison(&self) -> Option<BloomError> {
+        self.snapshot_state
+            .check_poison()
+            .map(BloomError::StorageError)
+    }
+
+    fn mark_chunk_dirty(&self, bit_index: usize) {
+        let chunk_id = bit_index / (self.chunk_size_bytes * 8);
+        let mut dirty_chunks = self.dirty_chunks.write().unwrap();
+        if chunk_id < dirty_chunks.len() {
+            dirty_chunks.set(chunk_id, true);
+        }
+    }
+
+    fn maybe_notify_count_trigger(&self, config: &BloomFilterConfig) {
+        if let (Some(notify), Some(pers)) =
+            (&self.snapshot_notify, &config.persistence)
+            && pers.snapshot_after_inserts > 0
+            && self.snapshot_state.inserts_since_snapshot()
+                >= pers.snapshot_after_inserts
+        {
+            notify.notify_one();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -154,13 +184,10 @@ impl BloomFilter {
         #[cfg(feature = "fjall")]
         if let Some(persistence_config) = &config.persistence {
             if persistence_config.db_path.exists() {
-                println!(
-                    "DB exists, loading from {:?}",
-                    persistence_config.db_path
-                );
+                info!("DB exists, loading from {:?}", persistence_config.db_path);
                 return Self::load(persistence_config.db_path.clone()).await;
             } else {
-                println!(
+                info!(
                     "DB doesn't exist, creating new at {:?}",
                     persistence_config.db_path
                 );
@@ -185,7 +212,7 @@ impl BloomFilter {
                 .persistence
                 .as_ref()
                 .map(|p| p.chunk_size_bytes)
-                .unwrap_or(4096);
+                .unwrap_or(DEFAULT_CHUNK_SIZE);
             let chunk_count = (bit_vector_size + chunk_size_bytes * 8 - 1)
                 .div_ceil(chunk_size_bytes * 8);
             let dirty_chunks = Arc::new(RwLock::new(bitvec![0; chunk_count]));
@@ -401,32 +428,20 @@ impl BloomFilterOps for BloomFilter {
     fn insert(&self, item: &[u8]) -> BloomResult<()> {
         #[cfg(feature = "fjall")]
         if let Some(ref ph) = self.persistence
-            && let Some(err) = ph.snapshot_state.check_poison()
+            && let Some(err) = ph.check_poison()
         {
-            return Err(BloomError::StorageError(err));
+            return Err(err);
         }
 
         let indices =
-            default_hash_function(item, self.num_hashes, self.bit_vector_size);
+            compute_indices(item, self.num_hashes, self.bit_vector_size)?;
 
         let mut bits = self.bits.write().unwrap();
 
-        for idx in indices {
-            let idx = idx as usize;
-            if idx >= self.bit_vector_size {
-                return Err(BloomError::IndexOutOfBounds {
-                    index: idx,
-                    capacity: self.bit_vector_size,
-                });
-            }
-
+        for &idx in &indices {
             #[cfg(feature = "fjall")]
             if let Some(ref ph) = self.persistence {
-                let mut dirty_chunks = ph.dirty_chunks.write().unwrap();
-                let chunk_id = idx / (ph.chunk_size_bytes * 8);
-                if chunk_id < dirty_chunks.len() {
-                    dirty_chunks.set(chunk_id, true);
-                }
+                ph.mark_chunk_dirty(idx);
             }
 
             bits.set(idx, true);
@@ -437,11 +452,7 @@ impl BloomFilterOps for BloomFilter {
         #[cfg(feature = "fjall")]
         if let Some(ref ph) = self.persistence {
             ph.snapshot_state.record_inserts(1);
-            maybe_notify_count_trigger(
-                &ph.snapshot_state,
-                &ph.snapshot_notify,
-                &self.config,
-            );
+            ph.maybe_notify_count_trigger(&self.config);
         }
 
         Ok(())
@@ -449,17 +460,10 @@ impl BloomFilterOps for BloomFilter {
 
     fn contains(&self, item: &[u8]) -> BloomResult<bool> {
         let indices =
-            default_hash_function(item, self.num_hashes, self.bit_vector_size);
+            compute_indices(item, self.num_hashes, self.bit_vector_size)?;
         let bits = self.bits.read().unwrap();
 
-        for idx in indices {
-            let idx = idx as usize;
-            if idx >= self.bit_vector_size {
-                return Err(BloomError::IndexOutOfBounds {
-                    index: idx,
-                    capacity: self.bit_vector_size,
-                });
-            }
+        for &idx in &indices {
             if !bits[idx] {
                 return Ok(false);
             }
@@ -483,37 +487,25 @@ impl BulkBloomFilterOps for BloomFilter {
 
         #[cfg(feature = "fjall")]
         if let Some(ref ph) = self.persistence
-            && let Some(err) = ph.snapshot_state.check_poison()
+            && let Some(err) = ph.check_poison()
         {
-            return Err(BloomError::StorageError(err));
+            return Err(err);
         }
 
-        let all_indices: Vec<Vec<u32>> = items
+        let all_indices: Vec<Vec<usize>> = items
             .iter()
             .map(|item| {
-                default_hash_function(item, self.num_hashes, self.bit_vector_size)
+                compute_indices(item, self.num_hashes, self.bit_vector_size)
             })
-            .collect();
+            .collect::<BloomResult<Vec<_>>>()?;
 
         let mut bits = self.bits.write().unwrap();
 
         for indices in &all_indices {
             for &idx in indices {
-                let idx = idx as usize;
-                if idx >= self.bit_vector_size {
-                    return Err(BloomError::IndexOutOfBounds {
-                        index: idx,
-                        capacity: self.bit_vector_size,
-                    });
-                }
-
                 #[cfg(feature = "fjall")]
                 if let Some(ref ph) = self.persistence {
-                    let mut dirty_chunks = ph.dirty_chunks.write().unwrap();
-                    let chunk_id = idx / (ph.chunk_size_bytes * 8);
-                    if chunk_id < dirty_chunks.len() {
-                        dirty_chunks.set(chunk_id, true);
-                    }
+                    ph.mark_chunk_dirty(idx);
                 }
 
                 bits.set(idx, true);
@@ -525,11 +517,7 @@ impl BulkBloomFilterOps for BloomFilter {
         #[cfg(feature = "fjall")]
         if let Some(ref ph) = self.persistence {
             ph.snapshot_state.record_inserts(items.len());
-            maybe_notify_count_trigger(
-                &ph.snapshot_state,
-                &ph.snapshot_notify,
-                &self.config,
-            );
+            ph.maybe_notify_count_trigger(&self.config);
         }
 
         Ok(())
@@ -540,12 +528,12 @@ impl BulkBloomFilterOps for BloomFilter {
             return Ok(Vec::new());
         }
 
-        let all_indices: Vec<Vec<u32>> = items
+        let all_indices: Vec<Vec<usize>> = items
             .iter()
             .map(|item| {
-                default_hash_function(item, self.num_hashes, self.bit_vector_size)
+                compute_indices(item, self.num_hashes, self.bit_vector_size)
             })
-            .collect();
+            .collect::<BloomResult<Vec<_>>>()?;
 
         let bits = self.bits.read().unwrap();
 
@@ -553,13 +541,6 @@ impl BulkBloomFilterOps for BloomFilter {
         for indices in &all_indices {
             let mut exists = true;
             for &idx in indices {
-                let idx = idx as usize;
-                if idx >= self.bit_vector_size {
-                    return Err(BloomError::IndexOutOfBounds {
-                        index: idx,
-                        capacity: self.bit_vector_size,
-                    });
-                }
                 if !bits[idx] {
                     exists = false;
                     break;
@@ -577,7 +558,7 @@ impl BulkBloomFilterOps for BloomFilter {
 // ---------------------------------------------------------------------------
 
 /// Extract bytes for a single chunk from the bit vector.
-fn extract_chunk_bytes_bloom(
+fn extract_chunk_bytes(
     bits: &BitVec<usize, Lsb0>,
     chunk_id: usize,
     chunk_size_bits: usize,
@@ -613,13 +594,32 @@ fn extract_dirty_chunks_from_arcs(
     let mut chunks = Vec::new();
     for chunk_id in 0..dirty.len() {
         if dirty[chunk_id] {
-            let data =
-                extract_chunk_bytes_bloom(&bits, chunk_id, chunk_size_bits);
+            let data = extract_chunk_bytes(&bits, chunk_id, chunk_size_bits);
             chunks.push((chunk_id, data));
         }
     }
     debug!("Extracted {} dirty chunks for snapshot", chunks.len());
     chunks
+}
+
+fn compute_indices(
+    item: &[u8],
+    num_hashes: usize,
+    capacity: usize,
+) -> BloomResult<Vec<usize>> {
+    let indices = default_hash_function(item, num_hashes, capacity);
+    let mut result = Vec::with_capacity(indices.len());
+    for idx in indices {
+        let idx = idx as usize;
+        if idx >= capacity {
+            return Err(BloomError::IndexOutOfBounds {
+                index: idx,
+                capacity,
+            });
+        }
+        result.push(idx);
+    }
+    Ok(result)
 }
 
 /// Perform one snapshot attempt: save dirty chunks, clear dirty flags, update state.
@@ -654,21 +654,6 @@ async fn do_snapshot(
             state.on_snapshot_failure(&e.to_string());
             Err(e)
         }
-    }
-}
-
-/// Notify the background task when the insert-count threshold is crossed.
-#[cfg(feature = "fjall")]
-fn maybe_notify_count_trigger(
-    state: &Arc<SnapshotState>,
-    notify: &Option<Arc<Notify>>,
-    config: &BloomFilterConfig,
-) {
-    if let (Some(notify), Some(pers)) = (notify, &config.persistence)
-        && pers.snapshot_after_inserts > 0
-        && state.inserts_since_snapshot() >= pers.snapshot_after_inserts
-    {
-        notify.notify_one();
     }
 }
 
