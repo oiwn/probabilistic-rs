@@ -1,6 +1,6 @@
 [package]
 name = "probabilistic-rs"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2024"
 authors = ["oiwn"]
 description = "Probabilistic data structures in Rust"

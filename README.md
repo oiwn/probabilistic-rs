@@ -15,8 +15,6 @@ Probabilistic data structures in Rust with Python bindings and HTTP API.
 - **Python Bindings** — native wheels via PyO3/maturin
 - **CLI + TUI** — interactive terminal interface
 
-![TUI Screenshot](tui.png)
-
 ## Installation
 
 **Rust:**
