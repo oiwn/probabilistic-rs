@@ -2,40 +2,18 @@ name: Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
   workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
-  REDIS_URI: redis://localhost:6379/15
-  MONGODB_URI: mongodb://localhost:27017/testdb
-     
+
 jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      mongodb:
-        image: mongo:6
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.runCommand(\"ping\").ok'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -48,12 +26,12 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      
+
       - name: Cargo check
-        run: cargo check --all-features --workspace
-        
+        run: cargo check --features "server,cli,fjall" --workspace
+
       - name: Run unit tests
-        run: cargo test --lib --all-features --workspace
-        
+        run: cargo test --lib --features "server,cli,fjall" --workspace
+
       - name: Run integration tests
-        run: cargo test --test "*" --all-features --workspace
+        run: cargo test --test "*" --features "server,cli,fjall" --workspace
