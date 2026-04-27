@@ -430,14 +430,16 @@ impl ExpiringBloomFilter {
                 .await
             {
                 Ok(()) => {
-                    ph.dirty_chunks
-                        .write()
-                        .map_err(|_| {
+                    {
+                        let mut dc = ph.dirty_chunks.write().map_err(|_| {
                             EbloomError::LockError(
                                 "Failed to write dirty chunks".into(),
                             )
-                        })?
-                        .fill(false);
+                        })?;
+                        for (chunk_id, _) in &dirty_chunks {
+                            dc.set(*chunk_id, false);
+                        }
+                    }
 
                     let now_ms = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
@@ -729,12 +731,12 @@ async fn do_ebloom_snapshot(
             // Clear dirty bits only after both saves succeed. This ensures that
             // if the task is aborted between the two awaits, the dirty bits
             // remain set and the final snapshot on drop can re-save idempotently.
-            dirty_chunks
-                .write()
-                .map_err(|_| {
-                    EbloomError::LockError("Failed to write dirty chunks".into())
-                })?
-                .fill(false);
+            let mut dc = dirty_chunks.write().map_err(|_| {
+                EbloomError::LockError("Failed to write dirty chunks".into())
+            })?;
+            for (chunk_id, _) in &dirty {
+                dc.set(*chunk_id, false);
+            }
 
             state.on_snapshot_success();
             Ok(())

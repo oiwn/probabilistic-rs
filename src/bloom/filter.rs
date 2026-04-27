@@ -392,7 +392,12 @@ impl Drop for BloomFilter {
                         rt.block_on(async move {
                             match storage.save_snapshot(&dirty).await {
                                 Ok(()) => {
-                                    dc.write().unwrap().fill(false);
+                                    {
+                                        let mut dc = dc.write().unwrap();
+                                        for (chunk_id, _) in &dirty {
+                                            dc.set(*chunk_id, false);
+                                        }
+                                    }
                                     state.on_snapshot_success();
                                     info!("Final snapshot on drop succeeded");
                                 }
@@ -645,7 +650,10 @@ async fn do_snapshot(
 
     match storage.save_snapshot(&dirty).await {
         Ok(()) => {
-            dirty_chunks_arc.write().unwrap().fill(false);
+            let mut dc = dirty_chunks_arc.write().unwrap();
+            for (chunk_id, _) in &dirty {
+                dc.set(*chunk_id, false);
+            }
             state.on_snapshot_success();
             info!("Saved {} dirty chunks to database", dirty.len());
             Ok(())
