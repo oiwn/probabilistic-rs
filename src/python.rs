@@ -3,10 +3,17 @@ use std::path::PathBuf;
 use tokio::runtime::Runtime;
 
 use crate::BloomError;
+use crate::CuckooError;
 use crate::EbloomError;
 use crate::bloom::{
     BloomFilter, BloomFilterConfigBuilder, BloomFilterOps, BloomFilterStats,
     BulkBloomFilterOps, PersistenceConfigBuilder,
+};
+use crate::cuckoo::config::{
+    CuckooFilterConfigBuilder, CuckooPersistenceConfigBuilder,
+};
+use crate::cuckoo::{
+    BulkCuckooFilterOps, CuckooFilter, CuckooFilterOps, CuckooFilterStats,
 };
 use crate::ebloom::config::{
     ExpiringFilterConfigBuilder, ExpiringPersistenceConfigBuilder,
@@ -38,6 +45,20 @@ impl From<EbloomError> for PyErr {
                 pyo3::exceptions::PyValueError::new_err(msg)
             }
             EbloomError::StorageError(msg) => {
+                pyo3::exceptions::PyIOError::new_err(msg)
+            }
+            _ => pyo3::exceptions::PyRuntimeError::new_err(err.to_string()),
+        }
+    }
+}
+
+impl From<CuckooError> for PyErr {
+    fn from(err: CuckooError) -> PyErr {
+        match err {
+            CuckooError::InvalidConfig(msg) => {
+                pyo3::exceptions::PyValueError::new_err(msg)
+            }
+            CuckooError::StorageError(msg) => {
                 pyo3::exceptions::PyIOError::new_err(msg)
             }
             _ => pyo3::exceptions::PyRuntimeError::new_err(err.to_string()),
@@ -388,10 +409,155 @@ impl PyExpiringBloomFilter {
     }
 }
 
+// ---------------------------------------------------------------------------
+// CuckooFilter
+// ---------------------------------------------------------------------------
+
+#[pyclass(name = "CuckooFilter")]
+pub struct PyCuckooFilter {
+    inner: CuckooFilter,
+    rt: &'static Runtime,
+}
+
+#[pymethods]
+impl PyCuckooFilter {
+    #[new]
+    #[pyo3(signature = (capacity, fingerprint_bits=8, entries_per_bucket=4, max_kicks=500))]
+    fn new(
+        capacity: usize,
+        fingerprint_bits: usize,
+        entries_per_bucket: usize,
+        max_kicks: usize,
+    ) -> PyResult<Self> {
+        let config = CuckooFilterConfigBuilder::default()
+            .capacity(capacity)
+            .fingerprint_bits(fingerprint_bits)
+            .entries_per_bucket(entries_per_bucket)
+            .max_kicks(max_kicks)
+            .build()
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(e.to_string())
+            })?;
+
+        let rt = get_runtime();
+        let inner = CuckooFilter::new(config)?;
+
+        Ok(Self { inner, rt })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (db_path, capacity, fingerprint_bits=8, entries_per_bucket=4, max_kicks=500, snapshot=None))]
+    fn create(
+        db_path: &str,
+        capacity: usize,
+        fingerprint_bits: usize,
+        entries_per_bucket: usize,
+        max_kicks: usize,
+        snapshot: Option<PySnapshotConfig>,
+    ) -> PyResult<Self> {
+        let snap = snapshot.unwrap_or_default();
+        let persistence = CuckooPersistenceConfigBuilder::default()
+            .db_path(PathBuf::from(db_path))
+            .auto_snapshot(snap.auto_snapshot)
+            .snapshot_interval(std::time::Duration::from_secs(snap.interval_secs))
+            .snapshot_after_inserts(snap.after_inserts)
+            .build()
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(e.to_string())
+            })?;
+
+        let config = CuckooFilterConfigBuilder::default()
+            .capacity(capacity)
+            .fingerprint_bits(fingerprint_bits)
+            .entries_per_bucket(entries_per_bucket)
+            .max_kicks(max_kicks)
+            .persistence(Some(persistence))
+            .build()
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(e.to_string())
+            })?;
+
+        let rt = get_runtime();
+        let inner = rt.block_on(CuckooFilter::create(config))?;
+
+        Ok(Self { inner, rt })
+    }
+
+    #[staticmethod]
+    fn load(db_path: &str) -> PyResult<Self> {
+        let rt = get_runtime();
+        let inner = rt.block_on(CuckooFilter::load(PathBuf::from(db_path)))?;
+
+        Ok(Self { inner, rt })
+    }
+
+    fn insert(&self, item: &[u8]) -> PyResult<()> {
+        self.inner.insert(item)?;
+        Ok(())
+    }
+
+    fn contains(&self, item: &[u8]) -> PyResult<bool> {
+        Ok(self.inner.contains(item)?)
+    }
+
+    fn delete(&self, item: &[u8]) -> PyResult<()> {
+        self.inner.delete(item)?;
+        Ok(())
+    }
+
+    fn clear(&self) -> PyResult<()> {
+        self.inner.clear()?;
+        Ok(())
+    }
+
+    fn insert_bulk(&self, items: Vec<Vec<u8>>) -> PyResult<()> {
+        let refs: Vec<&[u8]> = items.iter().map(|v| v.as_slice()).collect();
+        self.inner.insert_bulk(&refs)?;
+        Ok(())
+    }
+
+    fn contains_bulk(&self, items: Vec<Vec<u8>>) -> PyResult<Vec<bool>> {
+        let refs: Vec<&[u8]> = items.iter().map(|v| v.as_slice()).collect();
+        Ok(self.inner.contains_bulk(&refs)?)
+    }
+
+    fn delete_bulk(&self, items: Vec<Vec<u8>>) -> PyResult<()> {
+        let refs: Vec<&[u8]> = items.iter().map(|v| v.as_slice()).collect();
+        self.inner.delete_bulk(&refs)?;
+        Ok(())
+    }
+
+    fn save_snapshot(&self) -> PyResult<()> {
+        self.rt.block_on(self.inner.save_snapshot())?;
+        Ok(())
+    }
+
+    fn capacity(&self) -> usize {
+        self.inner.capacity()
+    }
+
+    fn fingerprint_bits(&self) -> usize {
+        self.inner.fingerprint_bits()
+    }
+
+    fn entries_per_bucket(&self) -> usize {
+        self.inner.entries_per_bucket()
+    }
+
+    fn insert_count(&self) -> usize {
+        self.inner.insert_count()
+    }
+
+    fn load_factor(&self) -> f64 {
+        self.inner.load_factor()
+    }
+}
+
 #[pymodule]
 fn probabilistic_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySnapshotConfig>()?;
     m.add_class::<PyBloomFilter>()?;
+    m.add_class::<PyCuckooFilter>()?;
     m.add_class::<PyExpiringBloomFilter>()?;
     Ok(())
 }

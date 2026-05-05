@@ -31,3 +31,12 @@ def ebloom_filter():
         level_duration_secs=3600,
         num_levels=3,
     )
+
+
+@pytest.fixture
+def cuckoo_filter():
+    """In-memory CuckooFilter for quick tests."""
+    from probabilistic_rs import CuckooFilter
+
+    return CuckooFilter(capacity=10_000)
+
