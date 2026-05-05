@@ -29,6 +29,7 @@
 
 pub mod bloom;
 pub mod common;
+pub mod cuckoo;
 pub mod ebloom;
 mod hash;
 #[cfg(any(feature = "server", feature = "python", feature = "fjall"))]
@@ -42,6 +43,7 @@ mod python;
 pub mod server;
 
 pub use bloom::error::{BloomError, BloomResult};
+pub use cuckoo::error::{CuckooError, CuckooResult};
 pub use ebloom::error::{EbloomError, EbloomResult};
 pub use hash::{
     HashFunction, default_hash_function, optimal_bit_vector_size,

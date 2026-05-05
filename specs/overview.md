@@ -12,13 +12,17 @@ Rust library for probabilistic data structures with optional persistence.
 - Bulk operations (`insert_bulk`, `contains_bulk`)
 - Persistence backends: In-memory, Fjall
 
-### 🚧 Expiring Bloom Filter (`src/ebloom/`)
+### ✅ Expiring Bloom Filter (`src/ebloom/`)
 - Time-decaying multi-level Bloom filter
-- CURRENTLY: Cleanup and reorganization phase
-- Goal: Automatic expiration of old entries
+- Automatic expiration of old entries via level rotation
+- Persistence backends: In-memory, Fjall
+
+### ✅ Cuckoo Filter (`src/cuckoo/`)
+- Supports deletion (key differentiator from Bloom filters)
+- Partial-key cuckoo hashing with configurable fingerprint size
+- Bucket-based storage with eviction ("cuckoo kicking")
 
 ### 📋 Planned Data Structures
-- Cuckoo filters (next after expiring bloom)
 - HyperLogLog
 - Count-min sketch
 - Quotient filters
@@ -28,6 +32,7 @@ Rust library for probabilistic data structures with optional persistence.
 ### Core Components
 - `src/bloom/` - Standard Bloom filter
 - `src/ebloom/` - Expiring Bloom filter
+- `src/cuckoo/` - Cuckoo filter (WIP)
 - `src/hash.rs` - Murmur3 + FNV-1a double hashing
 - `src/common.rs` - Shared utilities
 
@@ -51,19 +56,19 @@ Rust library for probabilistic data structures with optional persistence.
 
 ### ✅ Working
 - Core Bloom filter with full API
+- Expiring Bloom filter with full API and test coverage
+- Cuckoo filter with insert/contains/delete/clear
 - Fjall and in-memory persistence
 - Bulk operations and optimizations
 - Test suite and benchmarks
 - CLI, TUI, and HTTP server
 
-### 🚧 In Progress  
-- Expiring Bloom filter cleanup and reorganization
-- Multi-level Fjall persistence for expiring filter
+### 🚧 In Progress
+- None at present
 
 ### 📋 Next Up
-- Complete expiring filter implementation
-- Cuckoo filter implementation
 - HyperLogLog implementation
+- Count-min sketch
 
 ## Build & Test Commands
 
@@ -78,5 +83,6 @@ Feature flags: `--features "fjall,server,cli"`
 
 Targeted testing:
 - `cargo test core_bloom_filter_tests` - Core bloom filter
-- `cargo test ebloom_tests` - Exiring bloom filter
+- `cargo test ebloom_tests` - Expiring bloom filter
+- `cargo test cuckoo_tests` - Cuckoo filter
 - `cargo test fjall_tests` - Persistence tests
